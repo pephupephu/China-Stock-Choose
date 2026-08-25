@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# venv + tool caches
+.venv/
+venv/
+.env
+
+# scratch artefacts
+tmp_*.csv
+
+# screener outputs (run artefacts only; tracked file keeps the dir)
+output/.cache/
+output/pick_*.md
+output/pick_*.html
+output/pick_*.json
+!output/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
