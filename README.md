@@ -9,7 +9,7 @@
 | --- | --- |
 | **Repository** | https://github.com/pephupephu/China-Stock-Choose |
 | **Runtime** | Python 3.10+, AKShare (cninfo / Sina / 10jqka / Shenwan) |
-| **Schedule** | Weekdays 18:30 UTC (02:30 CST, after market close + filings) |
+| **Schedule** | Weekdays 10:30 UTC (18:30 CST, after market close + filings) |
 | **License** | MIT |
 
 ## Features
@@ -80,7 +80,10 @@ strip HTML.
 ## Scheduling
 
 The repository ships with `.github/workflows/daily.yml` that runs the
-screener Monday-Friday after the China A-share market close.
+screener Monday-Friday at 10:30 UTC (18:30 Asia/Shanghai), after the China
+A-share market close and the daily disclosure deadline. The scheduled run
+executes `python -m src.main run` (full pipeline + email); configure the
+SMTP secrets below and you receive a fresh pick list every weekday.
 
 Required GitHub secrets:
 
@@ -92,8 +95,9 @@ Required GitHub secrets:
 | `EMAIL_SUBJECT_PREFIX` | optional prefix |
 | `AKSHARE_PROXY` | optional HTTP/HTTPS proxy URL |
 
-`workflow_dispatch` lets you re-run manually with a `smoke` checkbox to
-test without sending email.
+`workflow_dispatch` lets you re-run manually: leave `smoke` unchecked
+for the full pipeline with email, or check it for a dry run that only
+screens (`python -m src.main screen`) without sending email.
 
 ## Data Sources
 

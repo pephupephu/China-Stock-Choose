@@ -2,14 +2,13 @@ name: Daily A-share Screener
 
 on:
   schedule:
-    # 18:30 UTC == 02:30 (next day) Asia/Shanghai ; first run before A-share open
-    # after market close (15:00) and the disclosure deadline (17:00-18:00) most
-    # new filings are available.
+    # 10:30 UTC == 18:30 Asia/Shanghai (weekdays), after market close (15:00)
+    # and the disclosure deadline (17:00-18:00) so new filings are available.
     - cron: "30 10 * * 1-5"
   workflow_dispatch:
     inputs:
       smoke:
-        description: "Smoke test on first 20 stocks (no email)"
+        description: "Dry run: screen only, no email"
         required: false
         default: "false"
 
@@ -34,20 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run screener (dry-run artefacts only -- secrets-gated)
-        env:
-          AKSHARE_PROXY: ${{ secrets.AKSHARE_PROXY }}
-          LOG_LEVEL: INFO
-          TOP_N: "200"
-        run: |
-          if [ "${{ github.event.inputs.smoke }}" = "true" ]; then
-            echo "Smoke mode: skipping email"
-          else
-            python -m src.main screen
-          fi
-
-      - name: Run screener (full pipeline + email)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.smoke != 'true'
+      - name: Run screener (full pipeline + email; smoke = screen only)
         env:
           AKSHARE_PROXY: ${{ secrets.AKSHARE_PROXY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -58,7 +44,15 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
           EMAIL_SUBJECT_PREFIX: ${{ secrets.EMAIL_SUBJECT_PREFIX }}
-        run: python -m src.main run
+          LOG_LEVEL: INFO
+          TOP_N: "200"
+        run: |
+          if [ "${{ github.event.inputs.smoke }}" = "true" ]; then
+            echo "Smoke mode: screening only, no email"
+            python -m src.main screen
+          else
+            python -m src.main run
+          fi
 
       - name: Commit output artefacts
         run: |

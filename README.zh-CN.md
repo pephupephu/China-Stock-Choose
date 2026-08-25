@@ -8,7 +8,7 @@
 | --- | --- |
 | **仓库地址** | https://github.com/pephupephu/China-Stock-Choose |
 | **运行环境** | Python 3.10+，AKShare（巨潮 / 新浪 / 同花顺 / 申万数据） |
-| **执行时间** | 每个交易日 18:30 UTC（次日 02:30 北京时间，收盘后） |
+| **执行时间** | 每个交易日 10:30 UTC（18:30 北京时间，收盘后） |
 | **许可证** | MIT |
 
 ## 功能要点
@@ -74,8 +74,9 @@ output/pick_YYYY-MM-DD.json    # 完整结构化结果
 
 ## 定时任务
 
-仓库自带 `.github/workflows/daily.yml`，A 股收盘后自动执行。需要你在
-GitHub 仓库的 Settings → Secrets 中填入：
+仓库自带 `.github/workflows/daily.yml`，每个交易日 10:30 UTC（北京
+时间 18:30，A 股收盘后）自动执行 `python -m src.main run`，全量筛选并
+把结果发送到你的邮箱。需要你在 GitHub 仓库的 Settings → Secrets 中填入：
 
 | 密钥 | 备注 |
 | --- | --- |
@@ -85,8 +86,9 @@ GitHub 仓库的 Settings → Secrets 中填入：
 | `EMAIL_SUBJECT_PREFIX` | 邮件主题前缀（可空） |
 | `AKSHARE_PROXY` | 可选 HTTP/HTTPS 代理（国内访问多数站点需要） |
 
-也可以在 Actions 页面手动 `Run workflow`，勾选 `smoke` 选项在测试时
-禁用邮件。
+也可以在 Actions 页面手动 `Run workflow`：不勾选 `smoke` 会执行完整
+流水线并发送邮件；勾选 `smoke` 则只运行 `python -m src.main screen`
+筛选、不发邮件（干跑）。
 
 ## 数据来源
 
