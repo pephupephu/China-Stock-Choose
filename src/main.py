@@ -64,18 +64,20 @@ def _listing_date_heuristic(income: pd.DataFrame) -> str | None:
         return None
 
 
-def _run_full_screen(cfg: AppConfig) -> list[ScreeningResult]:
+def _run_full_screen(cfg: AppConfig, limit: int = 0) -> list[ScreeningResult]:
     fetcher = DataFetcher(
         proxy=cfg.data.akshare_proxy,
         cache_dir=cfg.data.cache_dir,
         cache_ttl_seconds=cfg.data.cache_ttl_seconds,
-        max_workers=getattr(cfg.data, "max_workers", 6),
+        max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
     )
     resolver = ShenwanResolver(fetcher)
 
     universe = fetcher.all_a_share_codes()
     universe = universe[universe["symbol"].str.match(r"^\d{6}$", na=False)]
-    logger.info("Universe size: %d", len(universe))
+    if limit and limit > 0:
+        universe = universe.head(limit)
+    logger.info("Universe size: %d%s", len(universe), " (limited)" if limit else "")
 
     today = _dt.date.today()
     symbol_to_meta: dict[str, dict[str, str]] = {}
@@ -147,8 +149,8 @@ def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date) -> No
     logger.info("Email sent to %s", ", ".join(cfg.email.recipients))
 
 
-def cmd_run(cfg: AppConfig) -> int:
-    results = _run_full_screen(cfg)
+def cmd_run(cfg: AppConfig, limit: int = 0) -> int:
+    results = _run_full_screen(cfg, limit=limit)
     today = _dt.date.today()
     files = write_outputs(cfg.output_dir, results, today)
     logger.info("Outputs: %s", ", ".join(str(p) for p in files.values()))
@@ -160,8 +162,8 @@ def cmd_run(cfg: AppConfig) -> int:
     return 0
 
 
-def cmd_screen(cfg: AppConfig) -> int:
-    results = _run_full_screen(cfg)
+def cmd_screen(cfg: AppConfig, limit: int = 0) -> int:
+    results = _run_full_screen(cfg, limit=limit)
     today = _dt.date.today()
     files = write_outputs(cfg.output_dir, results, today)
     picks = sum(1 for r in results if r.passes)
@@ -251,6 +253,7 @@ def cmd_test(cfg: AppConfig) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="china-stock-choose")
+    parser.add_argument("--limit", type=int, default=0, help="limit to first N symbols (debug/test)")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run", help="full pipeline + email")
     sub.add_parser("screen", help="run screener only")
@@ -260,9 +263,9 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging(cfg.log_level)
 
     if args.cmd == "run":
-        return cmd_run(cfg)
+        return cmd_run(cfg, limit=getattr(args, "limit", 0))
     if args.cmd == "screen":
-        return cmd_screen(cfg)
+        return cmd_screen(cfg, limit=getattr(args, "limit", 0))
     if args.cmd == "test":
         return cmd_test(cfg)
     parser.print_help()
