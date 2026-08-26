@@ -2,8 +2,9 @@
 
 > Daily AI-driven screener for China A-shares. Filters the universe against
 > a published rule set, emails picks to your inbox, and commits results to
-> this repo. All inputs come from public disclosures -- no third-party
-> analyst ratings or opinion articles.
+> this repo. Every input comes from public disclosures (cninfo, Sina,
+> Tonghuashun, Shenwan); no third-party analyst ratings, opinion articles
+> or paid data feeds are used.
 
 | Item | Value |
 | --- | --- |
@@ -16,7 +17,8 @@
 
 - Hard-filter + scoring pipeline applied to every A-share ticker.
 - Multi-source verification: cninfo dividends, Sina financial statements,
-  Tonghuashun (ths) main-business breakdown, Shenwan industry classification.
+  Tonghuashun (10jqka) main-business breakdown (including
+  in-progress major projects), Shenwan industry classification.
 - HTML + plain-text + JSON output, automatically attached to a daily
   multipart email.
 - On-disk parquet cache (default 6 h TTL) keeps re-runs cheap.
@@ -46,23 +48,42 @@ python -m src.main test      # smoke test on a handful of tickers
 
 Hard-filter rules -- a stock must satisfy all of them:
 
-| # | Rule | Source |
+| #  | Rule | Source |
 | --- | --- | --- |
-| 1 | Excluded ST / *ST names | name string |
-| 2 | Excluded non-standard audit opinions | disclosed in annual report |
-| 3 | Dividend yield >= 4% in at least one of the last 2 reported years | cninfo `stock_dividend_cninfo` |
-| 4 | TTM PE between 0 and 30 (exclusive) | Sina daily close + income statement |
-| 5 | Last 3 years of 扣非净利润 strictly positive | Sina income statement |
-| 6 | ROE TTM >= 10% | Sina balance sheet + income statement |
-| 7 | Debt-to-asset ratio <= 70% | Sina balance sheet |
-| 8 | Payout ratio >= 40% (>= 100 allowed with warning) | cninfo dividend / Sina income statement |
-| 9 | Operating cash flow >= total cash dividend for the year | Sina cash-flow statement |
+| 1  | Exclude ST / *ST names | name string |
+| 2  | Exclude non-standard audit opinions (default `RULE_EXCLUDE_QUALIFIED=true`) | disclosed in annual report |
+| 3  | Dividend yield >= 4% in **every** of the last 2 annual cash distributions (per-share cash amount is **not** used) | cninfo `stock_dividend_cninfo` |
+| 4  | TTM PE in (0, 30) exclusive | Sina daily close + income statement |
+| 5  | Last 3 years of 扣非净利润 strictly positive | Sina income statement |
+| 6  | ROE > 10% over the recent period (matches `RULE_MIN_ROE_PCT`) | Sina balance sheet + income statement |
+| 7  | Debt-to-asset ratio <= 70%; ratios > 60% are warned but allowed | Sina balance sheet |
+| 8  | Payout ratio >= 40%; > 100% allowed with "depleted payout" warning | cninfo dividend / Sina income statement |
+| 9  | OCF >= total cash dividend for the year is a **warning by default** (set `RULE_REQUIRE_OCF_COVERS_DIVIDEND=true` to enforce) | Sina cash-flow statement |
 | 10 | Operating cash flow per share > 0 | Sina cash-flow statement |
-| 11 | Largest YoY main-business revenue drop <= 20% in last 3 years | Sina / ths |
+| 11 | Largest YoY main-business revenue drop <= 20% in the recent period | Sina / 10jqka |
+
+Explicitly **not** filtered: there is **no** market-cap constraint by
+design. The latest rule revision removed it.
 
 All thresholds are environment-driven -- see `.env.example`. The repo was
 NOT designed for discretionary overrides; tweaks belong in commits so
 they survive review.
+
+## Output Fields
+
+The pick report shows the following per ticker so a human can sanity-check
+each name against the original disclosures:
+
+- 股票代码 / 股票名称 (`symbol` / `name`)
+- 板块 / 行业（申万分类）, 上市时间 (`listing_date`)
+- 现价 (`close_price`) + 报价时点 (`close_price_as_of`)
+- PE(TTM)、PB、市赚率（PC ratio = 股价 / 每股经营活动现金流）、ROE(TTM)
+- 每股 OCF、负债率、分红支付率
+- 近 2 年每股分红、近 2 年股息率（年报对应收盘价）
+- 近 3 年主营收入 YoY
+- 在建工程 / 重大事项（取自同花顺主营业务构成 + 年报附注，便于人工复查）
+- 一次性特别分红、审计意见、负债率/分红现金流等警示标签
+- `score`（按综合评分降序，只展示前 50 条）
 
 ## Output
 
@@ -101,10 +122,13 @@ screens (`python -m src.main screen`) without sending email.
 
 ## Data Sources
 
+Strictly public disclosures; no analyst commentary or paid feeds:
+
 - 巨潮资讯网 (`cninfo.com.cn`) -- dividend history, annual-report filings.
 - 新浪财经 (`finance.sina.com.cn`) -- balance sheet, income statement,
-  cash-flow statement, daily K-line.
-- 同花顺 (`10jqka.com.cn`) -- main-business composition.
+  cash-flow statement, daily K-line (PE, PB, close price).
+- 同花顺 (`10jqka.com.cn`) -- main-business composition, in-progress
+  major projects pulled from segment tags and annual-report notes.
 - 申万指数 (Sina mirror) -- industry classification, industry PE / PB.
 
 See `docs/data-sources.md` for endpoints and gotchas.
@@ -125,6 +149,9 @@ network. Integration smoke-test is the `python -m src.main test` command.
   re-running in the morning.
 - AkShare endpoints occasionally change shape. If a daily run errors,
   check `get_logs` then `git log` for upstream changes.
+- Every observation labelled "在建重大工程" comes from the upstream
+  10jqka segment text and should be cross-checked against the original
+  annual report before any decision is taken.
 - **This software is for personal research only. It is not investment
   advice. Always verify against the original disclosures before
   trading.**

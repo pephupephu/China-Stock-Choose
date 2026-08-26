@@ -47,7 +47,7 @@ def _rule_div_yield(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[s
     ]
     if not yields:
         return False, "无近2年分红数据"
-    if any(y >= r.min_dividend_yield_pct for y in yields):
+    if all(y >= r.min_dividend_yield_pct for y in yields):
         return True, None
     return False, f"近2年股息率均 < {r.min_dividend_yield_pct}%"
 
@@ -139,7 +139,7 @@ def _rule_qualified(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[s
 # ---------------------------------------------------------------------------
 # warnings (independent of build_metrics so manual metrics work too)
 # ---------------------------------------------------------------------------
-def _derive_warnings(m: StockMetrics) -> list[str]:
+def _derive_warnings(m: StockMetrics, r: ScreenerRules) -> list[str]:
     out: list[str] = list(m.warnings or [])
     if m.payout_ratio_pct is not None and m.payout_ratio_pct > 100:
         msg = "分红支付率 > 100%，透支式分红，可持续性差"
@@ -153,14 +153,14 @@ def _derive_warnings(m: StockMetrics) -> list[str]:
         msg = "经营性现金流 < 当年分红总额，现金流支撑不足"
         if msg not in out:
             out.append(msg)
-    if m.debt_ratio_pct is not None and m.debt_ratio_pct > 60:
-        msg = f"负债率 {m.debt_ratio_pct:.1f}% > 60%"
+    if m.debt_ratio_pct is not None and m.debt_ratio_pct > r.warn_debt_ratio_pct:
+        msg = f"负债率 {m.debt_ratio_pct:.1f}% > {r.warn_debt_ratio_pct:g}%"
         if msg not in out:
             out.append(msg)
     if m.main_revenue_yoy_pct_list:
         worst = min(m.main_revenue_yoy_pct_list)
-        if worst < -20:
-            msg = f"主业收入最大跌幅 {worst:.1f}% 超过 20%"
+        if worst < -abs(r.max_revenue_decline_pct):
+            msg = f"主业收入最大跌幅 {worst:.1f}% 超过 {r.max_revenue_decline_pct:g}%"
             if msg not in out:
                 out.append(msg)
     return out
@@ -218,7 +218,7 @@ def screen(metrics: StockMetrics, rules: ScreenerRules) -> ScreeningResult:
         if not ok:
             res.passes = False
             res.hard_fail_reasons.append(f"[{label}] {reason}")
-    res.warnings = _derive_warnings(metrics)
+    res.warnings = _derive_warnings(metrics, rules)
     res.score = _score(metrics, rules)
     return res
 

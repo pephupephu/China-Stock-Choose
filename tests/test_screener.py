@@ -93,11 +93,27 @@ def test_payout_over_100_warns_but_passes():
     assert any("透支" in w for w in r.warnings)
 
 
-def test_ocf_insufficient_blocks():
+def test_ocf_insufficient_warns_but_passes():
     m = make_metrics(
         operating_cash_flow_total=1000.0,
         cash_dividend_total=2000.0,
     )
     r = screen(m, ScreenerRules())
+    assert r.passes
+    assert any("现金流" in w for w in r.warnings)
+
+
+def test_fail_dividend_one_year_low():
+    m = make_metrics(
+        cash_dividend_per_share_history=[
+            {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
+            {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7, "scheme": ""},
+        ],
+        dividend_yield_pct_history=[
+            {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
+            {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7},
+        ],
+    )
+    r = screen(m, ScreenerRules())
     assert not r.passes
-    assert any("现金流" in x for x in r.hard_fail_reasons)
+    assert any("股息率" in x for x in r.hard_fail_reasons)

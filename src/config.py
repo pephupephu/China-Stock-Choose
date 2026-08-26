@@ -26,6 +26,11 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return out
 
 
+def _env_bool(value: str) -> bool:
+    """Parse an env var as a boolean; anything but falsey words is True."""
+    return value.strip().lower() not in ("false", "0", "no", "")
+
+
 @dataclass
 class ScreenerRules:
     """Hard filter thresholds. Mirrors the merged rule-set in README."""
@@ -47,15 +52,16 @@ class ScreenerRules:
 
     # Capital structure
     max_debt_ratio_pct: float = 70.0
+    warn_debt_ratio_pct: float = 60.0
     require_positive_cf_per_share: bool = True
 
     # Distribution
     min_payout_ratio_pct: float = 40.0
-    require_ocf_covers_dividend: bool = True
+    require_ocf_covers_dividend: bool = False
 
     # Universe exclusions
     exclude_st: bool = True
-    exclude_qualified: bool = False        # exclude non-standard audit opinions
+    exclude_qualified: bool = True         # exclude non-standard audit opinions
     require_cash_dividend: bool = True    # exclude pure 送股 / 转增 distributions
 
     # Industry-relative (informational only)
@@ -105,9 +111,14 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
         min_dividend_yield_pct=float(env.get("RULE_MIN_DIVIDEND_YIELD_PCT", 4.0)),
         max_pe_ttm=float(env.get("RULE_MAX_PE_TTM", 30.0)),
         max_debt_ratio_pct=float(env.get("RULE_MAX_DEBT_RATIO_PCT", 70.0)),
+        warn_debt_ratio_pct=float(env.get("RULE_WARN_DEBT_RATIO_PCT", 60.0)),
         max_revenue_decline_pct=float(env.get("RULE_MAX_REVENUE_DECLINE_PCT", 20.0)),
         min_payout_ratio_pct=float(env.get("RULE_MIN_PAYOUT_RATIO_PCT", 40.0)),
         min_roe_pct=float(env.get("RULE_MIN_ROE_PCT", 10.0)),
+        exclude_qualified=_env_bool(env.get("RULE_EXCLUDE_QUALIFIED", "true")),
+        require_ocf_covers_dividend=_env_bool(
+            env.get("RULE_REQUIRE_OCF_COVERS_DIVIDEND", "false")
+        ),
     )
 
     rcpts = [r.strip() for r in env.get("EMAIL_RECIPIENTS", "").split(",") if r.strip()]
