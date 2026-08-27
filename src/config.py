@@ -37,7 +37,7 @@ class ScreenerRules:
 
     # Dividend yield window (>= 4% in last 2 distinct annual cash distributions)
     min_dividend_yield_pct: float = 4.0
-    dividend_lookback_years: int = 2
+    dividend_lookback_years: int = 3
 
     # Valuation
     min_pe_ttm: float = 0.0
@@ -109,6 +109,7 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
 
     rules = ScreenerRules(
         min_dividend_yield_pct=float(env.get("RULE_MIN_DIVIDEND_YIELD_PCT", 4.0)),
+        dividend_lookback_years=int(env.get("RULE_DIVIDEND_LOOKBACK_YEARS", 3)),
         max_pe_ttm=float(env.get("RULE_MAX_PE_TTM", 30.0)),
         max_debt_ratio_pct=float(env.get("RULE_MAX_DEBT_RATIO_PCT", 70.0)),
         warn_debt_ratio_pct=float(env.get("RULE_WARN_DEBT_RATIO_PCT", 60.0)),

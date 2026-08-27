@@ -75,9 +75,13 @@ def _run_full_screen(cfg: AppConfig, limit: int = 0) -> list[ScreeningResult]:
 
     universe = fetcher.all_a_share_codes()
     universe = universe[universe["symbol"].str.match(r"^\d{6}$", na=False)]
+    # Filter to pure A-shares only: drop Shenzhen B (200xxx) and Shanghai B (9xxxxx),
+    # plus ST / *ST names so they never reach the rule pipeline or the report.
+    universe = universe[~universe["symbol"].str.startswith(("200", "9"))]
+    universe = universe[~universe["name"].astype(str).str.contains("ST", na=False, regex=False)]
     if limit and limit > 0:
         universe = universe.head(limit)
-    logger.info("Universe size: %d%s", len(universe), " (limited)" if limit else "")
+    logger.info("Universe size: %d A-shares%s (excluded ST/B-share)", len(universe), " (limited)" if limit else "")
 
     today = _dt.date.today()
     symbol_to_meta: dict[str, dict[str, str]] = {}

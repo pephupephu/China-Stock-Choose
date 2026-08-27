@@ -177,7 +177,7 @@ def metrics_from_payload(
 
     rev_series = _values_by_item(is_long, "revenue")
     if len(rev_series) >= 4:
-        out.main_revenue_yoy_pct_list = _annual_yoy_pct(rev_series)
+        out.main_revenue_yoy_pct_list = _annual_yoy_pct(rev_series, window=3)
 
     equity_eop = _values_by_item(bs_long, "equity_attrib")
     equity_avg = _avg_equity_pair(equity_eop)
@@ -331,19 +331,26 @@ def _avg_equity_pair(equity_eop: pd.Series) -> Optional[float]:
     return float((equity_eop.iloc[-1] + equity_eop.iloc[-2]) / 2)
 
 
-def _annual_yoy_pct(series: pd.Series) -> list[float]:
+def _annual_yoy_pct(series: pd.Series, window: int = 3) -> list[float]:
+    """Year-over-year growth, keeping only the most recent ``window`` years.
+
+    Returns the last N annual YoY values (default 3 years). Pass
+    ``window=0`` for the full historical list.
+    """
     if series is None or series.empty:
         return []
     df = pd.DataFrame({"v": series.values, "p": pd.to_datetime(series.index)})
     df["year"] = df["p"].dt.year
     annual = df.groupby("year")["v"].last().sort_index()
-    yoy = []
+    yoy_list: list[float] = []
     for i in range(1, len(annual)):
         prev = annual.iloc[i - 1]
         cur = annual.iloc[i]
         if prev and prev > 0:
-            yoy.append((cur - prev) / prev * 100.0)
-    return yoy
+            yoy_list.append((cur - prev) / prev * 100.0)
+    if window and len(yoy_list) > window:
+        yoy_list = yoy_list[-window:]
+    return yoy_list
 
 
 def _last_n_positive(series: pd.Series, n: int = 3) -> bool:

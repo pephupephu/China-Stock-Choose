@@ -27,10 +27,12 @@ def make_metrics(**overrides) -> StockMetrics:
         cash_dividend_per_share_history=[
             {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
             {"year": 2023, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
+            {"year": 2022, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
         ],
         dividend_yield_pct_history=[
             {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
             {"year": 2023, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
+            {"year": 2022, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
         ],
         main_revenue_yoy_pct_list=[5.0, 4.0, 6.0],
         is_one_time_dividend=False,
@@ -68,10 +70,12 @@ def test_fail_dividend_yield_too_low():
         cash_dividend_per_share_history=[
             {"year": 2024, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7, "scheme": ""},
             {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7, "scheme": ""},
+            {"year": 2022, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7, "scheme": ""},
         ],
         dividend_yield_pct_history=[
             {"year": 2024, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7},
             {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7},
+            {"year": 2022, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7},
         ],
     )
     r = screen(m, ScreenerRules())
@@ -108,10 +112,12 @@ def test_fail_dividend_one_year_low():
         cash_dividend_per_share_history=[
             {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
             {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7, "scheme": ""},
+            {"year": 2022, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0, "scheme": ""},
         ],
         dividend_yield_pct_history=[
             {"year": 2024, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
             {"year": 2023, "cash_per_share": 0.2, "dividend_yield_pct_at_close": 1.7},
+            {"year": 2022, "cash_per_share": 0.6, "dividend_yield_pct_at_close": 5.0},
         ],
     )
     r = screen(m, ScreenerRules())

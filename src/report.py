@@ -45,7 +45,7 @@ def render_markdown_table(results: list[ScreeningResult]) -> str:
     rows: list[str] = []
     rows.append(
         "| 代码 | 简称 | 板块 | 上市日期 | 现价 | "
-        "近2年股息率 | ROE TTM | TTM PE | PB | 市赚率 | "
+        "近3年股息率 | ROE TTM | TTM PE | PB | 市赚率 | "
         "主营YoY | 负债率 | 分红率 | 每股OCF | 近2年每股分红 | 审计意见 | 备注 |"
     )
     rows.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
@@ -115,13 +115,19 @@ def render_markdown(results: list[ScreeningResult], run_date: _dt.date) -> str:
             "- 同花顺 - 主营业务构成\n"
             "- 申万指数 - 行业成分 / 行业市盈率\n\n"
         )
-    buf.write("---\n\n")
+    if not picks:
+        buf.write(
+            "_今日无标的满足全部硬过滤_（股息率、ROE、PE、负债率、现金流、营收跌幅等）；\n"
+            "完整数据见 `pick_YYYY-MM-DD.json`，可作为后续回测样本。\n\n"
+        )
+    buf.write("---\n\n## 数据来源\n\n")
     buf.write(
-        f"**被规则剔除:** {len(rejected)} 只（前 50 条节选）\n\n"
+        "- 巨潮资讯网 (cninfo.com.cn) - 现金分红 / 公司公告\n"
+        "- 新浪财经 (finance.sina.com.cn) - 资产负债表 / 利润表 / 现金流量表 / 日K\n"
+        "- 同花顺 - 主营业务构成\n"
+        "- 申万指数 - 行业成分 / 行业市盈率\n"
+        "_数据范围_: 仅沪深京 A 股（不含 ST、B 股、港股）。\n\n"
     )
-    if rejected:
-        buf.write(render_markdown_table(rejected[:50]))
-        buf.write("\n")
     return buf.getvalue()
 
 
@@ -167,7 +173,7 @@ def _pick_row_html(r: ScreeningResult) -> dict[str, str]:
 
 def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
     picks = [r for r in results if r.passes]
-    rejected = [r for r in results if not r.passes][:50]
+    rejected = []
     css = (
         "body{font-family:'PingFang SC',Helvetica,Arial,sans-serif;"
         "font-size:14px;color:#222;max-width:1280px;margin:auto;padding:24px}"
@@ -186,7 +192,7 @@ def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
         ("industry", "板块"),
         ("listing", "上市日期"),
         ("close", "现价"),
-        ("dy", "近2年股息率"),
+        ("dy", "近3年股息率"),
         ("roe", "ROE TTM"),
         ("pe", "TTM PE"),
         ("pb", "PB"),
@@ -199,7 +205,7 @@ def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
         ("warnings", "风险提示"),
     ]
     pick_rows = [_pick_row_html(r) for r in picks]
-    rejected_rows = [_pick_row_html(r) for r in rejected]
+    rejected_rows = []
 
     body = []
     body.append(f"<h1>📈 每日选股 · {run_date.isoformat()}</h1>")
@@ -215,10 +221,10 @@ def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
     if pick_rows:
         body.append("<h2>✔ 满足全部硬过滤条件</h2>")
         body.append(_table_html(pick_rows, columns_pick))
-    body.append("<h2>✘ 被规则剔除（节选前 50）</h2>")
-    body.append(_table_html(rejected_rows, columns_pick))
+    if not pick_rows:
+        body.append("<p style=\"color:#888\">今日没有标的满足全部硬过滤条件；完整 JSON 产出见 <code>pick_YYYY-MM-DD.json</code>。</p>")
     body.append(
-        "<footer>China-Stock-Choose · 仅供研究自用，不构成投资建议。请独立判断并自负盈亏。</footer>"
+        "<footer>China-Stock-Choose · 仅沪深京 A 股（不含 ST / B 股 / 港股）。仅供研究自用，不构成投资建议。请独立判断并自负盈亏。</footer>"
     )
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"

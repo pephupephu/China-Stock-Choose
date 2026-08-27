@@ -40,16 +40,17 @@ def _pct_max(value: Optional[float], max_pct: float) -> bool:
 # (passed_bool, reason_str_or_none)
 # ---------------------------------------------------------------------------
 def _rule_div_yield(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
+    lookback = max(1, r.dividend_lookback_years)
     yields = [
         d.get("dividend_yield_pct_at_close")
-        for d in (m.dividend_yield_pct_history or [])
+        for d in (m.dividend_yield_pct_history or [])[:lookback]
         if d.get("dividend_yield_pct_at_close") is not None
     ]
-    if not yields:
-        return False, "无近2年分红数据"
+    if len(yields) < lookback:
+        return False, f"近{lookback}年分红数据不足"
     if all(y >= r.min_dividend_yield_pct for y in yields):
         return True, None
-    return False, f"近2年股息率均 < {r.min_dividend_yield_pct}%"
+    return False, f"近{lookback}年股息率任意一年 < {r.min_dividend_yield_pct}%"
 
 
 def _rule_pe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
@@ -198,7 +199,7 @@ HardRule = Callable[[StockMetrics, ScreenerRules], tuple[bool, Optional[str]]]
 HARD_RULES: list[tuple[str, HardRule]] = [
     ("ST/*ST", _rule_st),
     ("non-standard audit", _rule_qualified),
-    ("近2年股息率≥4%", _rule_div_yield),
+    ("近3年股息率≥4%", _rule_div_yield),
     ("TTM 市盈率 0<PE<30", _rule_pe),
     ("近3年扣非净利润 > 0", _rule_deducted_profit),
     ("近3年 ROE > 10%", _rule_roe),
