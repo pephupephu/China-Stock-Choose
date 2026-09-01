@@ -24,3 +24,5 @@ output/pick_*.json
 .vscode/
 .idea/
 .DS_Store
+# Incremental weekly screener state (rebuilt each ISO week)
+output/.weekly_*.json

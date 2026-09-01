@@ -97,9 +97,16 @@ def render_markdown_table(results: list[ScreeningResult]) -> str:
     return "\n".join(rows)
 
 
-def render_markdown(results: list[ScreeningResult], run_date: _dt.date) -> str:
+def render_markdown(
+    results: list[ScreeningResult],
+    run_date: _dt.date,
+    soft_picks: Optional[list[ScreeningResult]] = None,
+    near_misses: Optional[list[ScreeningResult]] = None,
+) -> str:
     picks = [r for r in results if r.passes]
     rejected = [r for r in results if not r.passes]
+    soft_picks = soft_picks or []
+    near_misses = near_misses or []
     buf = io.StringIO()
     buf.write(f"# 选股结果 · {run_date.isoformat()}\n\n")
     buf.write(
@@ -115,6 +122,14 @@ def render_markdown(results: list[ScreeningResult], run_date: _dt.date) -> str:
             "- 同花顺 - 主营业务构成\n"
             "- 申万指数 - 行业成分 / 行业市盈率\n\n"
         )
+    if soft_picks:
+        buf.write("## 软命中（仅连续性规则未满足，但最近一年仍达股息率门槛）\n\n")
+        buf.write(render_markdown_table(soft_picks))
+        buf.write("\n\n")
+    if near_misses:
+        buf.write("## 近失（仅 1 条硬规则未满足）\n\n")
+        buf.write(render_markdown_table(near_misses))
+        buf.write("\n\n")
     if not picks:
         buf.write(
             "_今日无标的满足全部硬过滤_（股息率、ROE、PE、负债率、现金流、营收跌幅等）；\n"
@@ -171,9 +186,16 @@ def _pick_row_html(r: ScreeningResult) -> dict[str, str]:
     }
 
 
-def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
+def render_html(
+    results: list[ScreeningResult],
+    run_date: _dt.date,
+    soft_picks: Optional[list[ScreeningResult]] = None,
+    near_misses: Optional[list[ScreeningResult]] = None,
+) -> str:
     picks = [r for r in results if r.passes]
     rejected = []
+    soft_picks = soft_picks or []
+    near_misses = near_misses or []
     css = (
         "body{font-family:'PingFang SC',Helvetica,Arial,sans-serif;"
         "font-size:14px;color:#222;max-width:1280px;margin:auto;padding:24px}"
@@ -223,6 +245,12 @@ def render_html(results: list[ScreeningResult], run_date: _dt.date) -> str:
         body.append(_table_html(pick_rows, columns_pick))
     if not pick_rows:
         body.append("<p style=\"color:#888\">今日没有标的满足全部硬过滤条件；完整 JSON 产出见 <code>pick_YYYY-MM-DD.json</code>。</p>")
+    if soft_picks:
+        body.append("<h2>🟡 软命中（仅连续性规则未满足，但最近一年仍达股息率门槛）</h2>")
+        body.append(_table_html([_pick_row_html(r) for r in soft_picks], columns_pick))
+    if near_misses:
+        body.append("<h2>🟠 近失（仅 1 条硬规则未满足）</h2>")
+        body.append(_table_html([_pick_row_html(r) for r in near_misses], columns_pick))
     body.append(
         "<footer>China-Stock-Choose · 仅沪深京 A 股（不含 ST / B 股 / 港股）。仅供研究自用，不构成投资建议。请独立判断并自负盈亏。</footer>"
     )
@@ -239,14 +267,22 @@ def write_outputs(
     output_dir: Path,
     results: list[ScreeningResult],
     run_date: _dt.date,
+    soft_picks: Optional[list[ScreeningResult]] = None,
+    near_misses: Optional[list[ScreeningResult]] = None,
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     md_path = output_dir / f"pick_{run_date.isoformat()}.md"
     html_path = output_dir / f"pick_{run_date.isoformat()}.html"
     json_path = output_dir / f"pick_{run_date.isoformat()}.json"
 
-    md_path.write_text(render_markdown(results, run_date), encoding="utf-8")
-    html_path.write_text(render_html(results, run_date), encoding="utf-8")
+    md_path.write_text(
+        render_markdown(results, run_date, soft_picks=soft_picks, near_misses=near_misses),
+        encoding="utf-8",
+    )
+    html_path.write_text(
+        render_html(results, run_date, soft_picks=soft_picks, near_misses=near_misses),
+        encoding="utf-8",
+    )
 
     payload = {
         "run_date": run_date.isoformat(),

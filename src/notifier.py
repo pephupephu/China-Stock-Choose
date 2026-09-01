@@ -18,9 +18,16 @@ from .config import EmailConfig
 from .screener import ScreeningResult
 
 
-def render_plain_text(results: list[ScreeningResult], run_date: _dt.date) -> str:
+def render_plain_text(
+    results: list[ScreeningResult],
+    run_date: _dt.date,
+    soft_picks: Optional[list[ScreeningResult]] = None,
+    near_misses: Optional[list[ScreeningResult]] = None,
+) -> str:
     lines = [f"China-Stock-Choose · {run_date.isoformat()}", ""]
     picks = [r for r in results if r.passes]
+    soft_picks = soft_picks or []
+    near_misses = near_misses or []
     lines.append(f"满足全部规则: {len(picks)} 只 / 扫描 {len(results)}")
     lines.append("说明: 数据来自巨潮资讯网、新浪财经、同花顺、申万指数。仅供研究自用，不构成投资建议。")
     lines.append("")
@@ -36,6 +43,18 @@ def render_plain_text(results: list[ScreeningResult], run_date: _dt.date) -> str
         lines.append(f"  每股OCF: {m.operating_cash_flow_per_share}")
         if m.warnings:
             lines.append(f"  ⚠ {', '.join(m.warnings)}")
+        lines.append("")
+    if soft_picks:
+        lines.append("【软命中：仅连续性规则未满足，但最近一年仍达股息率门槛】")
+        for r in soft_picks:
+            m = r.metrics
+            lines.append(f"  ~ {m.symbol} {m.name}  ROE {m.roe_ttm_pct}%  负债率 {m.debt_ratio_pct}%")
+        lines.append("")
+    if near_misses:
+        lines.append("【近失：仅 1 条硬规则未满足】")
+        for r in near_misses:
+            m = r.metrics
+            lines.append(f"  ~ {m.symbol} {m.name}  " + "; ".join(r.hard_fail_reasons))
         lines.append("")
     return "\n".join(lines)
 

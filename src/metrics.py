@@ -201,8 +201,15 @@ def metrics_from_payload(
                 out.pc_ratio = out.pe_ttm / out.roe_ttm_pct
 
     np_series = _values_by_item(is_long, "deducted_net_profit")
-    if not np_series.empty:
-        out.deducted_non_net_profit_positive_3y = _last_n_positive(np_series, n=3)
+    # Sina's slim statement often omits the 扣非 column; fall back to 归母/净利润
+    # so the payout ratio and profit-continuity rules still evaluate.
+    profit_series = np_series
+    if profit_series.empty:
+        profit_series = _values_by_item(is_long, "net_profit_attrib")
+    if profit_series.empty:
+        profit_series = _values_by_item(is_long, "net_profit")
+    if not profit_series.empty:
+        out.deducted_non_net_profit_positive_3y = _last_n_positive(profit_series, n=3)
 
     liab = _values_by_item(bs_long, "liab_total")
     asset = _values_by_item(bs_long, "asset_total")
@@ -258,23 +265,23 @@ def metrics_from_payload(
             latest = cps[-1]
             out.is_one_time_dividend = latest > 2 * median if median > 0 else None
 
-        last_two = cash_hist_sorted[-2:]
+        last_three = cash_hist_sorted[-3:]
         out.dividend_yield_pct_history = [
             {
                 "year": d["year"],
                 "cash_per_share": d["cash_per_share"],
                 "dividend_yield_pct_at_close": d["dividend_yield_pct_at_close"],
             }
-            for d in last_two
+            for d in last_three
         ]
 
-        if cash_hist_sorted and not np_series.empty and shares:
+        if cash_hist_sorted and not profit_series.empty and shares:
             for d in reversed(cash_hist_sorted):
                 yr = d.get("year")
                 if yr is None:
                     continue
                 try:
-                    ann_nps = np_series[np_series.index.year == yr]
+                    ann_nps = profit_series[profit_series.index.year == yr]
                     if ann_nps.empty:
                         continue
                     annual_ni = ann_nps.iloc[-1]

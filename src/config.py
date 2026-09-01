@@ -98,6 +98,11 @@ class AppConfig:
     output_dir: Path = Path("output")
     top_n: int = 50
     log_level: str = "INFO"
+    # Incremental weekly mode: process this many new symbols per `weekly` run,
+    # accumulate across the week, and push the email when coverage is complete
+    # or on `weekly_push_weekday` (0=Mon ... 4=Fri).
+    incremental_chunk: int = 700
+    weekly_push_weekday: int = 4
 
 
 def load_config(env_path: Optional[Path] = None) -> AppConfig:
@@ -147,4 +152,6 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
         output_dir=Path(env.get("OUTPUT_DIR", "output")),
         top_n=int(env.get("TOP_N", "50")),
         log_level=env.get("LOG_LEVEL", "INFO"),
+        incremental_chunk=int(env.get("INCREMENTAL_CHUNK", "700")),
+        weekly_push_weekday=int(env.get("WEEKLY_PUSH_WEEKDAY", "4")),
     )

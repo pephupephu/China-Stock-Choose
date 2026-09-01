@@ -48,8 +48,27 @@ CLI:
 ```
 python -m src.main run       # full pipeline + email
 python -m src.main screen    # screen only, no email
+python -m src.main weekly    # incremental daily chunk; accumulate across the week, push on Friday (or when fully covered)
 python -m src.main test      # smoke test on a handful of tickers
 ```
+
+## Incremental weekly mode (recommended)
+
+Scanning all ~5000 A-shares in one go hammers the data sources and is easy to
+rate-limit. `weekly` instead processes a small batch (`INCREMENTAL_CHUNK`,
+default 700) of **not-yet-screened** symbols each run, accumulates the results
+in `output/.weekly_<ISO-week>.json`, and only sends the email once coverage is
+complete **or** on `WEEKLY_PUSH_WEEKDAY` (default 4 = Friday). Symbols already
+screened this week are read from the store, so they are never re-fetched -- the
+per-day cost stays small and stable.
+
+```bash
+python -m src.main weekly     # run daily (cron / GitHub Actions)
+```
+
+Tune via env: `INCREMENTAL_CHUNK` (symbols per run) and `WEEKLY_PUSH_WEEKDAY`
+(0=Mon .. 6=Sun). The bundled workflow already calls `weekly` on weekdays and
+pushes automatically on Friday or when the week's coverage is full.
 
 ## Rule Set (Merged)
 

@@ -21,6 +21,7 @@ class ScreeningResult:
     hard_fail_reasons: list[str] = field(default_factory=list)
     soft_fail_reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    failed_labels: list[str] = field(default_factory=list)
 
 
 def _positive(value: Optional[float]) -> bool:
@@ -219,6 +220,7 @@ def screen(metrics: StockMetrics, rules: ScreenerRules) -> ScreeningResult:
         if not ok:
             res.passes = False
             res.hard_fail_reasons.append(f"[{label}] {reason}")
+            res.failed_labels.append(label)
     res.warnings = _derive_warnings(metrics, rules)
     res.score = _score(metrics, rules)
     return res

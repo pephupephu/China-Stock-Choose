@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run screener (full pipeline + email; smoke = screen only)
+      - name: Run incremental weekly screener (daily chunk + Fri/complete push)
         env:
           AKSHARE_PROXY: ${{ secrets.AKSHARE_PROXY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -46,12 +46,14 @@ jobs:
           EMAIL_SUBJECT_PREFIX: ${{ secrets.EMAIL_SUBJECT_PREFIX }}
           LOG_LEVEL: INFO
           TOP_N: "200"
+          INCREMENTAL_CHUNK: "700"
+          WEEKLY_PUSH_WEEKDAY: "4"
         run: |
           if [ "${{ github.event.inputs.smoke }}" = "true" ]; then
             echo "Smoke mode: screening only, no email"
             python -m src.main screen
           else
-            python -m src.main run
+            python -m src.main weekly
           fi
 
       - name: Commit output artefacts

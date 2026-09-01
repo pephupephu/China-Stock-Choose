@@ -155,6 +155,8 @@ class DataFetcher:
 
     def shenwan_index_components(self, shenwan_code: str) -> list[str]:
         df = self.call("index_component_sw", symbol=shenwan_code)
+        if isinstance(df, list):
+            return [str(x).zfill(6) for x in df if x]
         if "证券代码" in df.columns:
             return df["证券代码"].astype(str).str.zfill(6).tolist()
         if "代码" in df.columns:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import io
+import json
 import logging
 import re
 import sys
@@ -31,7 +32,7 @@ from .data_fetcher import (
     fetch_many,
 )
 from .industry import ShenwanResolver, compute_industry_medians
-from .metrics import metrics_from_payload
+from .metrics import StockMetrics, metrics_from_payload
 from .report import render_html, render_markdown, write_outputs
 from .screener import ScreeningResult, screen, sort_picks
 from .notifier import render_plain_text, send_email
@@ -64,7 +65,20 @@ def _listing_date_heuristic(income: pd.DataFrame) -> str | None:
         return None
 
 
-def _run_full_screen(cfg: AppConfig, limit: int = 0) -> list[ScreeningResult]:
+def _build_universe(fetcher: DataFetcher) -> pd.DataFrame:
+    """Filtered A-share universe (no ST / B-share / non-6-digit codes)."""
+    universe = fetcher.all_a_share_codes()
+    universe = universe[universe["symbol"].str.match(r"^\d{6}$", na=False)]
+    universe = universe[~universe["symbol"].str.startswith(("200", "9"))]
+    universe = universe[~universe["name"].astype(str).str.contains("ST", na=False, regex=False)]
+    return universe
+
+
+def _run_full_screen(
+    cfg: AppConfig,
+    limit: int = 0,
+    only_symbols: Optional[list[str]] = None,
+) -> list[ScreeningResult]:
     fetcher = DataFetcher(
         proxy=cfg.data.akshare_proxy,
         cache_dir=cfg.data.cache_dir,
@@ -73,12 +87,10 @@ def _run_full_screen(cfg: AppConfig, limit: int = 0) -> list[ScreeningResult]:
     )
     resolver = ShenwanResolver(fetcher)
 
-    universe = fetcher.all_a_share_codes()
-    universe = universe[universe["symbol"].str.match(r"^\d{6}$", na=False)]
-    # Filter to pure A-shares only: drop Shenzhen B (200xxx) and Shanghai B (9xxxxx),
-    # plus ST / *ST names so they never reach the rule pipeline or the report.
-    universe = universe[~universe["symbol"].str.startswith(("200", "9"))]
-    universe = universe[~universe["name"].astype(str).str.contains("ST", na=False, regex=False)]
+    universe = _build_universe(fetcher)
+    if only_symbols is not None:
+        wanted = set(only_symbols)
+        universe = universe[universe["symbol"].isin(wanted)]
     if limit and limit > 0:
         universe = universe.head(limit)
     logger.info("Universe size: %d A-shares%s (excluded ST/B-share)", len(universe), " (limited)" if limit else "")
@@ -139,12 +151,14 @@ def _run_full_screen(cfg: AppConfig, limit: int = 0) -> list[ScreeningResult]:
     return sort_picks(results)
 
 
-def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date) -> None:
+def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date,
+         soft_picks: Optional[list[ScreeningResult]] = None,
+         near_misses: Optional[list[ScreeningResult]] = None) -> None:
     if not cfg.email.recipients:
         logger.warning("EMAIL_RECIPIENTS not set; skipping email")
         return
-    html_body = render_html(results, today)
-    plain_body = render_plain_text(results, today)
+    html_body = render_html(results, today, soft_picks=soft_picks, near_misses=near_misses)
+    plain_body = render_plain_text(results, today, soft_picks=soft_picks, near_misses=near_misses)
     subject = (
         f"{cfg.email.subject_prefix} {today.isoformat()} "
         f"命中 {sum(1 for r in results if r.passes)} 只"
@@ -153,13 +167,144 @@ def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date) -> No
     logger.info("Email sent to %s", ", ".join(cfg.email.recipients))
 
 
+_CONTINUITY_LABELS = {"近3年股息率≥4%", "近3年扣非净利润 > 0"}
+
+def _fallback_buckets(results, rules) -> tuple:
+    """When 0 hard hits: split rejects into (软命中, 近1差1).
+
+    * 软命中: the only failures are 3-year-continuity rules AND the most
+      recent reported year still meets the dividend yield threshold. 持续至今满足.
+    * 近1差1: exactly one hard rule failed.
+    """
+    soft = []
+    near_miss = []
+    for r in results:
+        if r.passes:
+            continue
+        failed = set(r.failed_labels)
+        if failed.issubset(_CONTINUITY_LABELS):
+            history = r.metrics.dividend_yield_pct_history or []
+            current = history[0].get("dividend_yield_pct_at_close") if history else None
+            if current is not None and current >= rules.min_dividend_yield_pct:
+                soft.append(r)
+        if len(r.hard_fail_reasons) == 1:
+            near_miss.append(r)
+    soft.sort(key=lambda x: x.score, reverse=True)
+    near_miss.sort(key=lambda x: x.score, reverse=True)
+    return soft, near_miss
+
 def cmd_run(cfg: AppConfig, limit: int = 0) -> int:
     results = _run_full_screen(cfg, limit=limit)
     today = _dt.date.today()
-    files = write_outputs(cfg.output_dir, results, today)
+    has_hard = any(r.passes for r in results)
+    soft, near_miss = _fallback_buckets(results, cfg.rules) if not has_hard else ([], [])
+    files = write_outputs(cfg.output_dir, results, today, soft_picks=soft, near_misses=near_miss)
     logger.info("Outputs: %s", ", ".join(str(p) for p in files.values()))
+    if soft:
+        logger.info("Soft hits (持续至今满足): %d", len(soft))
+    if near_miss:
+        logger.info("Near-miss (1 fail): %d", len(near_miss))
     try:
-        _send(cfg, results, today)
+        _send(cfg, results, today, soft, near_miss)
+    except Exception as exc:
+        logger.error("Email failed: %s", exc)
+        return 1
+    return 0
+
+
+def _weekly_path(cfg: AppConfig, week: str) -> Path:
+    return cfg.output_dir / f".weekly_{week}.json"
+
+
+def _load_weekly(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_weekly(path: Path, store: dict) -> None:
+    path.write_text(
+        json.dumps(store, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+
+
+def _rebuild_result(rd: dict) -> ScreeningResult:
+    metrics = StockMetrics(**rd.get("metrics", {}))
+    return ScreeningResult(
+        metrics=metrics,
+        passes=rd.get("passes", False),
+        score=rd.get("score", 0.0),
+        hard_fail_reasons=rd.get("hard_fail_reasons", []),
+        soft_fail_reasons=rd.get("soft_fail_reasons", []),
+        warnings=rd.get("warnings", []),
+        failed_labels=rd.get("failed_labels", []),
+    )
+
+
+def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | None = None) -> int:
+    """Incremental mode: screen the next ``chunk`` uncovered symbols, accumulate
+    results across the ISO week, and push the email once coverage is complete
+    or on ``push_weekday`` (default Friday). Already-screened symbols are read
+    from the weekly store, so they are never re-fetched.
+    """
+    chunk = chunk or cfg.incremental_chunk
+    push_weekday = push_weekday if push_weekday is not None else cfg.weekly_push_weekday
+    today = _dt.date.today()
+    iso = today.isocalendar()
+    week = f"{iso.year}-W{iso.week:02d}"
+    path = _weekly_path(cfg, week)
+    store = _load_weekly(path)
+
+    fetcher = DataFetcher(
+        proxy=cfg.data.akshare_proxy,
+        cache_dir=cfg.data.cache_dir,
+        cache_ttl_seconds=cfg.data.cache_ttl_seconds,
+        max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
+    )
+    universe = _build_universe(fetcher)
+    all_symbols = [str(s) for s in universe["symbol"]]
+    pending = [s for s in all_symbols if s not in store]
+    logger.info(
+        "Weekly %s: store=%d pending=%d universe=%d",
+        week, len(store), len(pending), len(all_symbols),
+    )
+
+    if pending:
+        batch = pending[:chunk]
+        results = _run_full_screen(cfg, only_symbols=batch)
+        for r in results:
+            store[r.metrics.symbol] = {
+                "metrics": r.metrics.__dict__,
+                "score": r.score,
+                "passes": r.passes,
+                "hard_fail_reasons": r.hard_fail_reasons,
+                "soft_fail_reasons": r.soft_fail_reasons,
+                "warnings": r.warnings,
+                "failed_labels": r.failed_labels,
+            }
+        _save_weekly(path, store)
+        logger.info("Added %d; coverage %d/%d", len(batch), len(store), len(all_symbols))
+
+    coverage = len(store)
+    complete = coverage >= len(all_symbols)
+    push = bool(store) and (complete or today.weekday() == push_weekday)
+    if not push:
+        logger.info(
+            "Not pushing yet (coverage %d/%d, weekday %d != push %d). Re-run daily to accumulate.",
+            coverage, len(all_symbols), today.weekday(), push_weekday,
+        )
+        return 0
+
+    results = sort_picks([_rebuild_result(rd) for rd in store.values()])
+    has_hard = any(r.passes for r in results)
+    soft, near_miss = _fallback_buckets(results, cfg.rules) if not has_hard else ([], [])
+    files = write_outputs(cfg.output_dir, results, today, soft_picks=soft, near_misses=near_miss)
+    logger.info("Weekly push: coverage %d/%d, outputs %s", coverage, len(all_symbols), list(files.values()))
+    try:
+        _send(cfg, results, today, soft, near_miss)
     except Exception as exc:
         logger.error("Email failed: %s", exc)
         return 1
@@ -261,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run", help="full pipeline + email")
     sub.add_parser("screen", help="run screener only")
+    sub.add_parser("weekly", help="incremental daily chunk; push when week complete / on push weekday")
     sub.add_parser("test", help="smoke test on a handful of tickers")
     args = parser.parse_args(argv)
     cfg = load_config()
@@ -270,6 +416,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_run(cfg, limit=getattr(args, "limit", 0))
     if args.cmd == "screen":
         return cmd_screen(cfg, limit=getattr(args, "limit", 0))
+    if args.cmd == "weekly":
+        return cmd_weekly(cfg)
     if args.cmd == "test":
         return cmd_test(cfg)
     parser.print_help()

@@ -78,7 +78,12 @@ class ShenwanResolver:
     def members(self, code: str) -> list[str]:
         if code in self._member_cache:
             return self._member_cache[code]
-        symbols = self.fetcher.shenwan_index_components(code)
+        try:
+            symbols = self.fetcher.shenwan_index_components(code)
+        except Exception:
+            symbols = []
+        # Cache even on failure so a flaky endpoint can't trigger a per-symbol
+        # refetch storm (would otherwise be O(stocks x industries) network calls).
         self._member_cache[code] = symbols
         for s in symbols:
             self._symbol_to_code.setdefault(s, code)
