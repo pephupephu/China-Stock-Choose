@@ -15,7 +15,7 @@ on:
 jobs:
   screen:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: write
 
@@ -46,7 +46,7 @@ jobs:
           EMAIL_SUBJECT_PREFIX: ${{ secrets.EMAIL_SUBJECT_PREFIX }}
           LOG_LEVEL: INFO
           TOP_N: "200"
-          INCREMENTAL_CHUNK: "700"
+          INCREMENTAL_CHUNK: "1000"
           WEEKLY_PUSH_WEEKDAY: "4"
         run: |
           if [ "${{ github.event.inputs.smoke }}" = "true" ]; then

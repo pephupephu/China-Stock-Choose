@@ -21,6 +21,7 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -47,7 +48,7 @@ class DataFetcher:
     def __init__(
         self,
         proxy: Optional[str] = None,
-        timeout: int = 30,
+        timeout: int = 60,
         max_retries: int = 3,
         sleep_seconds: float = 0.25,
         cache_dir: Path = Path("output/.cache"),
@@ -103,19 +104,26 @@ class DataFetcher:
             if cached is not None:
                 return cached
 
+        fn = getattr(self._ak, fn_name)
         last_err: Optional[Exception] = None
         for attempt in range(1, self.max_retries + 1):
+            pool = ThreadPoolExecutor(max_workers=1)
+            future = pool.submit(fn, *args, **kwargs)
             try:
-                fn = getattr(self._ak, fn_name)
-                df = fn(*args, **kwargs)
+                df = future.result(timeout=self.timeout)
                 if not isinstance(df, pd.DataFrame):
                     df = pd.DataFrame(df)
                 self._misses += 1
                 self._write_cache(path, df)
                 return df
+            except FuturesTimeoutError as exc:
+                last_err = TimeoutError(f"akshare {fn_name} timed out after {self.timeout}s")
+                break
             except Exception as exc:
                 last_err = exc
                 time.sleep(self.sleep_seconds * attempt)
+            finally:
+                pool.shutdown(wait=False)
         if last_err:
             raise last_err
         raise RuntimeError("akshare call failed without exception")
@@ -262,7 +270,6 @@ def fetch_many(
             out[sym] = payload
             if done % 50 == 0:
                 logger.info("已抓取 %d/%d 只", done, total)
-            time.sleep(sleep_seconds)
     return out
 
 

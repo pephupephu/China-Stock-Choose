@@ -102,8 +102,13 @@ class ShenwanResolver:
                     return code
             except Exception:
                 continue
-            time.sleep(0.1)
         return None
+
+    def warm(self) -> None:
+        # ponytail: pre-fill the per-industry member cache so the first stock in
+        # _run_full_screen does not iterate all 34 industries with API calls.
+        for code, _ in SHENWAN_LV1:
+            self.members(code)
 
     def all_codes(self) -> list[tuple[str, str]]:
         return list(SHENWAN_LV1)

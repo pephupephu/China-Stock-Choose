@@ -86,6 +86,7 @@ def _run_full_screen(
         max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
     )
     resolver = ShenwanResolver(fetcher)
+    resolver.warm()  # ponytail: pre-fill industry->members cache so the per-stock loop below hits cache
 
     universe = _build_universe(fetcher)
     if only_symbols is not None:
@@ -139,7 +140,6 @@ def _run_full_screen(
             }
         except Exception as exc:
             logger.warning("skipping %s: %s", symbol, exc)
-        time.sleep(cfg.data.fetcher_sleep_seconds)
 
     medians = compute_industry_medians(resolver, symbol_to_metrics)
     for r in results:
