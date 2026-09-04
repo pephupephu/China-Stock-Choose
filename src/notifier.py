@@ -1,4 +1,4 @@
-"""Email notifier with multipart HTML + text alternatives.
+﻿"""Email notifier with multipart HTML + text alternatives.
 
 Designed for QQ Mail / 163 Mail / Gmail. SSL on 465 by default; STARTTLS
 on 587 if you set SMTP_USE_SSL=false. Uses an app-specific password.
@@ -51,7 +51,7 @@ def render_plain_text(
             lines.append(f"  ~ {m.symbol} {m.name}  ROE {m.roe_ttm_pct}%  负债率 {m.debt_ratio_pct}%")
         lines.append("")
     if near_misses:
-        lines.append("【近失：仅 1 条硬规则未满足】")
+        lines.append("【近失（top 30，1-2 条硬规则未满足；若无则按分数前 30）】")
         for r in near_misses:
             m = r.metrics
             lines.append(f"  ~ {m.symbol} {m.name}  " + "; ".join(r.hard_fail_reasons))

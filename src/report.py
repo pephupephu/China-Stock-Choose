@@ -1,4 +1,4 @@
-"""Render screening results to HTML (for email) + Markdown (for git)."""
+﻿"""Render screening results to HTML (for email) + Markdown (for git)."""
 
 from __future__ import annotations
 
@@ -127,7 +127,7 @@ def render_markdown(
         buf.write(render_markdown_table(soft_picks))
         buf.write("\n\n")
     if near_misses:
-        buf.write("## 近失（仅 1 条硬规则未满足）\n\n")
+        buf.write("## 近失（top 30，1-2 条硬规则未满足；若无则按分数前 30）\n\n")
         buf.write(render_markdown_table(near_misses))
         buf.write("\n\n")
     if not picks:
@@ -249,7 +249,7 @@ def render_html(
         body.append("<h2>🟡 软命中（仅连续性规则未满足，但最近一年仍达股息率门槛）</h2>")
         body.append(_table_html([_pick_row_html(r) for r in soft_picks], columns_pick))
     if near_misses:
-        body.append("<h2>🟠 近失（仅 1 条硬规则未满足）</h2>")
+        body.append("<h2>🟠 近失（top 30，1-2 条硬规则未满足；若无则按分数前 30）</h2>")
         body.append(_table_html([_pick_row_html(r) for r in near_misses], columns_pick))
     body.append(
         "<footer>China-Stock-Choose · 仅沪深京 A 股（不含 ST / B 股 / 港股）。仅供研究自用，不构成投资建议。请独立判断并自负盈亏。</footer>"
