@@ -21,6 +21,7 @@ import logging
 import re
 import sys
 import time
+from dataclasses import fields as _dc_fields
 from pathlib import Path
 
 import pandas as pd
@@ -232,7 +233,11 @@ def _save_weekly(path: Path, store: dict) -> None:
 
 
 def _rebuild_result(rd: dict) -> ScreeningResult:
-    metrics = StockMetrics(**rd.get("metrics", {}))
+    # ponytail: compute_industry_medians setattrs median_*/mean_*/n onto r.metrics,
+    # then cmd_weekly saves r.metrics.__dict__ -- those extras get stored.
+    # StockMetrics is a @dataclass and rejects unknown kwargs. Filter to known fields.
+    valid_keys = {f.name for f in _dc_fields(StockMetrics)}
+    metrics = StockMetrics(**{k: v for k, v in rd.get("metrics", {}).items() if k in valid_keys})
     return ScreeningResult(
         metrics=metrics,
         passes=rd.get("passes", False),
