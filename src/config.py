@@ -1,4 +1,4 @@
-"""Centralised configuration for the China-Stock-Choose screener.
+﻿"""Centralised configuration for the China-Stock-Choose screener.
 
 All runtime knobs live here. Values come from environment variables first
 (those are what GitHub Actions / scheduled tasks feed in), then fall back
@@ -87,7 +87,7 @@ class DataSources:
     fetcher_max_retries: int = 3
     fetcher_sleep_seconds: float = 0.25
     cache_dir: Path = Path("output/.cache")
-    cache_ttl_seconds: int = 6 * 3600
+    cache_ttl_seconds: int = 24 * 3600  # ponytail: was 6h; A-share universe list is stable for days
 
 
 @dataclass
@@ -142,7 +142,7 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
     data = DataSources(
         akshare_proxy=env.get("AKSHARE_PROXY") or env.get("HTTPS_PROXY") or None,
         cache_dir=Path(env.get("CACHE_DIR", "output/.cache")),
-        cache_ttl_seconds=int(env.get("CACHE_TTL_SECONDS", str(6 * 3600))),
+        cache_ttl_seconds=int(env.get("CACHE_TTL_SECONDS", str(24 * 3600))),  # ponytail: was 6h
     )
 
     return AppConfig(

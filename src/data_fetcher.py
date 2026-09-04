@@ -1,4 +1,4 @@
-"""Real-data fetchers for Chinese A-share screening.
+﻿"""Real-data fetchers for Chinese A-share screening.
 
 All endpoints in this module come from publicly disclosed sources:
 
@@ -131,10 +131,26 @@ class DataFetcher:
     # ---------------------------------------------------------------- domain
 
     def all_a_share_codes(self) -> pd.DataFrame:
-        df = self.call("stock_info_a_code_name")
-        df = df.rename(columns={"code": "symbol", "name": "name"})
-        df["symbol"] = df["symbol"].astype(str)
-        return df
+        # ponytail: Sina endpoint is flaky; Eastmoney (stock_zh_a_spot_em) is a free
+        # fall-back with different rate limits. Try Sina first (smaller payload,
+        # cached by akshare internally) then Eastmoney if Sina 5xx/JSON-broken.
+        last_exc: Optional[Exception] = None
+        for fn_name, renames in (
+            ("stock_info_a_code_name", {"code": "symbol", "name": "name"}),
+            ("stock_zh_a_spot_em",    {"\u4ee3\u7801": "symbol", "\u540d\u79f0": "name"}),
+        ):
+            try:
+                df = self.call(fn_name)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("universe endpoint %s failed, trying next: %s", fn_name, exc)
+                continue
+            df = df.rename(columns=renames)
+            if "symbol" in df.columns and "name" in df.columns:
+                df["symbol"] = df["symbol"].astype(str)
+                return df
+            logger.warning("endpoint %s returned unexpected columns: %s", fn_name, list(df.columns))
+        raise last_exc or RuntimeError("all A-share universe endpoints failed")
 
     def dividend_history(self, symbol: str) -> pd.DataFrame:
         return self.call("stock_dividend_cninfo", symbol=symbol)
