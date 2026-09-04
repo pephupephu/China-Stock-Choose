@@ -132,7 +132,7 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
         smtp_host=env.get("SMTP_HOST", "smtp.qq.com"),
         smtp_port=int(env.get("SMTP_PORT", "465")),
         smtp_use_ssl=env.get("SMTP_USE_SSL", "true").lower() != "false",
-        username=env.get("SMTP_USERNAME", ""),
+        username=env.get("SMTP_USERNAME") or env.get("EMAIL_SENDER", ""),
         password=env.get("SMTP_PASSWORD", ""),
         sender=env.get("EMAIL_SENDER") or env.get("SMTP_USERNAME", ""),
         recipients=rcpts,
