@@ -1,4 +1,4 @@
-"""Orchestrator for the daily A-share screener.
+﻿"""Orchestrator for the daily A-share screener.
 
 Run modes::
 
@@ -68,7 +68,13 @@ def _listing_date_heuristic(income: pd.DataFrame) -> str | None:
 
 def _build_universe(fetcher: DataFetcher) -> pd.DataFrame:
     """Filtered A-share universe (no ST / B-share / non-6-digit codes)."""
-    universe = fetcher.all_a_share_codes()
+    try:
+        universe = fetcher.all_a_share_codes()
+    except Exception as exc:
+        # ponytail: akshare Sina/Eastmoney endpoints return non-JSON on rate-limit. Return
+        # empty universe so cmd_weekly exits cleanly; tomorrow cron retries.
+        logger.warning("universe fetch failed, returning empty (akshare down): %s", exc)
+        return pd.DataFrame(columns=["symbol", "name"])
     universe = universe[universe["symbol"].str.match(r"^\d{6}$", na=False)]
     universe = universe[~universe["symbol"].str.startswith(("200", "9"))]
     universe = universe[~universe["name"].astype(str).str.contains("ST", na=False, regex=False)]

@@ -50,7 +50,7 @@ class DataFetcher:
         proxy: Optional[str] = None,
         timeout: int = 60,
         max_retries: int = 3,
-        sleep_seconds: float = 0.25,
+        sleep_seconds: float = 2.0,  # ponytail: was 0.25; Sina/akshare endpoints need >1s for transient blips
         cache_dir: Path = Path("output/.cache"),
         cache_ttl_seconds: int = 6 * 3600,
         max_workers: int = 6,
