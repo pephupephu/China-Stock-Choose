@@ -1,4 +1,4 @@
-name: Daily A-share Screener
+﻿name: Daily A-share Screener
 
 on:
   schedule:
@@ -53,7 +53,15 @@ jobs:
             echo "Smoke mode: screening only, no email"
             python -m src.main screen
           else
-            python -m src.main weekly
+            # 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri. Friday pushes the full accumulated week.
+            DOW=$(date -u +%u)
+            if [ "$DOW" = "5" ]; then
+              echo "Friday: weekly full-week push"
+              python -m src.main weekly
+            else
+              echo "Daily: today"s" picks push"
+              python -m src.main daily
+            fi
           fi
 
       - name: Commit output artefacts

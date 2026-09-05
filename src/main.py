@@ -334,6 +334,64 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
     return 0
 
 
+def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
+    """Screen today's batch, save to weekly store, push today's picks email.
+    
+    Use this Mon-Thu for a daily 1/5 summary. On Friday, run cmd_weekly
+    instead -- it reads the full accumulated store and pushes the whole week.
+    """
+    chunk = chunk or cfg.incremental_chunk
+    today = _dt.date.today()
+    iso = today.isocalendar()
+    week = f"{iso.year}-W{iso.week:02d}"
+    path = _weekly_path(cfg, week)
+    store = _load_weekly(path)
+    
+    fetcher = DataFetcher(
+        proxy=cfg.data.akshare_proxy,
+        cache_dir=cfg.data.cache_dir,
+        cache_ttl_seconds=cfg.data.cache_ttl_seconds,
+        max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
+    )
+    universe = _build_universe(fetcher)
+    all_symbols = [str(s) for s in universe["symbol"]]
+    pending = [s for s in all_symbols if s not in store]
+    logger.info(
+        "Daily %s: store=%d pending=%d universe=%d",
+        week, len(store), len(pending), len(all_symbols),
+    )
+    
+    if not pending:
+        logger.info("Daily: nothing pending (week fully covered)")
+        return 0
+    
+    batch = pending[:chunk]
+    results = _run_full_screen(cfg, only_symbols=batch)
+    for r in results:
+        store[r.metrics.symbol] = {
+            "metrics": r.metrics.__dict__,
+            "score": r.score,
+            "passes": r.passes,
+            "hard_fail_reasons": r.hard_fail_reasons,
+            "soft_fail_reasons": r.soft_fail_reasons,
+            "warnings": r.warnings,
+            "failed_labels": r.failed_labels,
+        }
+    _save_weekly(path, store)
+    logger.info("Daily: added %d, coverage %d/%d", len(batch), len(store), len(all_symbols))
+    
+    has_hard = any(r.passes for r in results)
+    soft, near_miss = _fallback_buckets(results, cfg.rules) if not has_hard else ([], [])
+    files = write_outputs(cfg.output_dir, results, today, soft_picks=soft, near_misses=near_miss)
+    logger.info("Daily push: coverage %d/%d, outputs %s", len(store), len(all_symbols), list(files.values()))
+    try:
+        _send(cfg, results, today, soft, near_miss)
+    except Exception as exc:
+        logger.error("Email failed: %s", exc)
+        return 1
+    return 0
+
+
 def cmd_screen(cfg: AppConfig, limit: int = 0) -> int:
     results = _run_full_screen(cfg, limit=limit)
     today = _dt.date.today()
@@ -430,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("run", help="full pipeline + email")
     sub.add_parser("screen", help="run screener only")
     sub.add_parser("weekly", help="incremental daily chunk; push when week complete / on push weekday")
+    sub.add_parser("daily", help="screen today's chunk and push today's picks email (use Mon-Thu)")
     sub.add_parser("test", help="smoke test on a handful of tickers")
     args = parser.parse_args(argv)
     cfg = load_config()
@@ -439,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_run(cfg, limit=getattr(args, "limit", 0))
     if args.cmd == "screen":
         return cmd_screen(cfg, limit=getattr(args, "limit", 0))
+    if args.cmd == "daily":
+        return cmd_daily(cfg)
     if args.cmd == "weekly":
         return cmd_weekly(cfg)
     if args.cmd == "test":
