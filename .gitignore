@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,4 +25,3 @@ output/pick_*.json
 .idea/
 .DS_Store
 # Incremental weekly screener state (rebuilt each ISO week)
-output/.weekly_*.json

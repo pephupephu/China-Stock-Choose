@@ -68,7 +68,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/pick_*.md output/pick_*.html output/pick_*.json || true
+          git add output/pick_*.md output/pick_*.html output/pick_*.json output/.weekly_*.json || true
           if git diff --cached --quiet; then
             echo "No new artefacts to commit."
             exit 0
