@@ -200,22 +200,27 @@ def _fallback_buckets(results, rules) -> tuple:
     # ponytail: relax near_miss from "exactly 1 fail" to "<= 2 fails" so 0-hit days
     # still surface high-score stocks with the failing rule(s) labeled.
     # Also include a top-30-by-score safety net for very-strict-rules universes.
-    # ponytail: exclude chronically loss-making stocks (3y deducted profit negative) from
-    # BOTH the 1-2 fail bucket AND the top-30-by-score fallback. A stock that
-    # has been unprofitable for 3 years is not "near miss" -- it is firmly out.
+    # ponytail: filter out stocks that are clearly not investment candidates --
+    # regardless of how few rules they fail. User feedback (Sept 11): "loss-making is never OK".
+    # Two filters:
+    #   1. chronic_loss: deducted profit has been negative for 3 consecutive years
+    #   2. current_loss: ROE TTM is non-positive (current-year loss)
+    # Stocks with insufficient data on these signals (None) still pass -- only data-
+    # supported chronic/current loss-makers are excluded.
     def _showable(r):
-        return not r.passes and r.metrics.deducted_non_net_profit_positive_3y is not False
+        m = r.metrics
+        chronic_loss = m.deducted_non_net_profit_positive_3y is False
+        current_loss = m.roe_ttm_pct is not None and m.roe_ttm_pct <= 0
+        return not r.passes and not chronic_loss and not current_loss
 
-    relaxed = [r for r in results
-              if _showable(r) and 1 <= len(r.hard_fail_reasons) <= 2]
-    relaxed.sort(key=lambda x: x.score, reverse=True)
-    near_miss = relaxed[:30]
-    if not near_miss:
-        # ponytail: nothing in 1-2 fail bucket. Show top-30 by score so 0-hit days
-        # still have signal. Each row labels every failing rule.
-        scored = [r for r in results if _showable(r)]
-        scored.sort(key=lambda x: x.score, reverse=True)
-        near_miss = scored[:30]
+    # User wants "stocks that pass everything or fail at most one rule" -- so
+    # 1-fail bucket only. NO top-30 by score fallback (that bucket included mediocre
+    # stocks just because they ranked above other mediocre ones). When no stock passes
+    # this bar, near_miss is empty -- that is the honest answer.
+    near_miss = [r for r in results
+                if _showable(r) and len(r.hard_fail_reasons) == 1]
+    near_miss.sort(key=lambda x: x.score, reverse=True)
+    near_miss = near_miss[:30]
     return soft, near_miss
 
 def cmd_run(cfg: AppConfig, limit: int = 0) -> int:
