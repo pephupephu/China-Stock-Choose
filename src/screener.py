@@ -1,4 +1,4 @@
-"""Apply the merged screening rules against pre-computed metrics.
+﻿"""Apply the merged screening rules against pre-computed metrics.
 
 Every rule lives as a clearly-named predicate returning (passed, reason).
 Final picks are sorted by ``score`` descending (dividend_yield + ROE - debt).
@@ -65,8 +65,19 @@ def _rule_pe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
 
 
 def _rule_roe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
+    # ponytail: "near 3 years ROE > 10%" means EACH of last 3 years, not TTM only.
+    # A stock that is profitable 3 years running is genuinely stable; one with a
+    # good TTM but a recent loss is a current-year turnaround story, not a pick.
+    if m.roe_history:
+        if len(m.roe_history) < 3:
+            return False, "近 3 年 ROE 数据不足"
+        if all(y >= r.min_roe_pct for y in m.roe_history[:3]):
+            return True, None
+        worst = min(m.roe_history[:3])
+        return False, f"近 3 年 ROE 最低 {worst:.1f}% < {r.min_roe_pct}%"
+    # ponytail: fall back to TTM only when per-year data is missing entirely
     if m.roe_ttm_pct is None:
-        return False, "ROE TTM 缺失"
+        return False, "ROE 缺失"
     if m.roe_ttm_pct < r.min_roe_pct:
         return False, f"ROE TTM {m.roe_ttm_pct:.1f}% < {r.min_roe_pct}%"
     return True, None

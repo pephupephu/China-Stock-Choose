@@ -1,4 +1,4 @@
-"""Compute per-stock financial metrics used by the screener.
+﻿"""Compute per-stock financial metrics used by the screener.
 
 Provides both a per-stock builder that takes DataFetcher-style payload
 dicts (used by parallel runs) and direct fetcher-based helpers
@@ -124,6 +124,7 @@ class StockMetrics:
     pb: Optional[float] = None
     pc_ratio: Optional[float] = None
     roe_ttm_pct: Optional[float] = None
+    roe_history: list[float] = field(default_factory=list)  # most recent N years of annual ROE pct
     deducted_non_net_profit_positive_3y: Optional[bool] = None
     main_revenue_yoy_pct_list: list[float] = field(default_factory=list)
     cash_dividend_per_share_history: list[dict] = field(default_factory=list)
@@ -183,6 +184,19 @@ def metrics_from_payload(
     equity_avg = _avg_equity_pair(equity_eop)
     if np_ttm is not None and equity_avg:
         out.roe_ttm_pct = (np_ttm / equity_avg) * 100.0
+    # ponytail: per-year ROE for the last 3 fiscal years, so the screener can
+    # enforce "each of last 3 years >= min_roe_pct" instead of just TTM.
+    if not np_attrib.empty and not equity_eop.empty:
+        _roe_hist: list[float] = []
+        for yr in sorted({y for y in np_attrib.index.year}, reverse=True)[:3]:
+            try:
+                ann_ni = np_attrib[np_attrib.index.year == yr].iloc[-1]
+                ann_eq = equity_eop[equity_eop.index.year == yr].iloc[-1]
+            except Exception:
+                continue
+            if ann_ni is not None and ann_eq and ann_eq > 0:
+                _roe_hist.append(float(ann_ni) / float(ann_eq) * 100.0)
+        out.roe_history = _roe_hist
 
     shares = _latest(_values_by_item(bs_long, "shares_outstanding"))
     bvps: Optional[float] = None
