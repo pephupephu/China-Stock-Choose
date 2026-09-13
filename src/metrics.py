@@ -275,11 +275,23 @@ def metrics_from_payload(
                     "dividend_yield_pct_at_close": dy,
                     "scheme": str(row.get("实施方案分红说明", ""))[:80],
                 })
-        by_year: dict[int, dict] = {}
+        # ponytail: cninfo returns one row PER dividend event, not per year. Interim + final
+        # in the same year = 2 rows. Sum cash_per_share across rows by year so the
+        # annual figure reflects the FULL year distribution (was being overwritten).
+        by_year: dict[int, float] = {}
         for d in out.cash_dividend_per_share_history:
-            if d.get("year") is not None:
-                by_year[d["year"]] = d
-        cash_hist_sorted = sorted(by_year.values(), key=lambda x: x["year"])
+            yr = d.get("year")
+            if yr is not None:
+                by_year[yr] = by_year.get(yr, 0.0) + float(d["cash_per_share"])
+        cash_hist_sorted = []
+        for yr in sorted(by_year.keys()):
+            cps = by_year[yr]
+            dy = (cps / out.close_price * 100.0) if out.close_price else None
+            cash_hist_sorted.append({
+                "year": yr,
+                "cash_per_share": cps,
+                "dividend_yield_pct_at_close": dy,
+            })
         out.cash_dividend_per_share_history = cash_hist_sorted
 
         cps = [d["cash_per_share"] for d in cash_hist_sorted]

@@ -81,6 +81,25 @@ def _build_universe(fetcher: DataFetcher) -> pd.DataFrame:
     return universe
 
 
+def _prefilter_by_pe(fetcher: DataFetcher, universe: pd.DataFrame, max_pe: float) -> set[str]:
+    """One-call akshare spot query for PE TTM; return the symbols that PASS the filter.
+
+    Stocks with PE <= 0 (loss-making: EPS is negative, so price/EPS flips sign)
+    and stocks with PE > max_pe are both excluded -- their detailed financial
+    fetches cost the most network/parse time and they cannot pass the rules.
+    \"\"\"
+    try:
+        spot = fetcher.call("stock_zh_a_spot_em")
+    except Exception as exc:
+        logger.warning("spot quote pre-filter failed, skipping: %s", exc)
+        return set(universe["symbol"].astype(str))  # fall back: do not pre-filter
+    spot = spot.rename(columns={"\u4ee3\u7801": "symbol", "\u5e02\u76c8\u7387(TTM)": "pe_ttm"})
+    spot["symbol"] = spot["symbol"].astype(str)
+    spot["pe_ttm"] = pd.to_numeric(spot["pe_ttm"], errors="coerce")
+    keep = spot[(spot["pe_ttm"] > 0) & (spot["pe_ttm"] <= max_pe)]["symbol"]
+    return set(keep)
+
+
 def _run_full_screen(
     cfg: AppConfig,
     limit: int = 0,
@@ -299,6 +318,10 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
         max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
     )
     universe = _build_universe(fetcher)
+    # ponytail: two-step screening -- drop PE<=0 (loss) and PE>max_pe stocks first so
+    # we do not pay detailed-metric-fetch cost on stocks that cannot pass.
+    pe_pass = _prefilter_by_pe(fetcher, universe, cfg.rules.max_pe_ttm)
+    universe = universe[universe["symbol"].astype(str).isin(pe_pass)]
     all_symbols = [str(s) for s in universe["symbol"]]
     pending = [s for s in all_symbols if s not in store]
     logger.info(
@@ -365,6 +388,10 @@ def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
         max_workers=int(__import__("os").getenv("SCREENER_MAX_WORKERS", "16")),
     )
     universe = _build_universe(fetcher)
+    # ponytail: two-step screening -- drop PE<=0 (loss) and PE>max_pe stocks first so
+    # we do not pay detailed-metric-fetch cost on stocks that cannot pass.
+    pe_pass = _prefilter_by_pe(fetcher, universe, cfg.rules.max_pe_ttm)
+    universe = universe[universe["symbol"].astype(str).isin(pe_pass)]
     all_symbols = [str(s) for s in universe["symbol"]]
     pending = [s for s in all_symbols if s not in store]
     logger.info(
