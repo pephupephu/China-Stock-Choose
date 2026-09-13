@@ -51,16 +51,16 @@ def _rule_div_yield(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[s
         return False, f"近{lookback}年分红数据不足"
     if all(y >= r.min_dividend_yield_pct for y in yields):
         return True, None
-    return False, f"近{lookback}年股息率任意一年 < {r.min_dividend_yield_pct}%"
+    return False, f"近 {lookback} 年股息率任意一年 < {r.min_dividend_yield_pct}%（= 每股现金分红 / 当年收盘价）"
 
 
 def _rule_pe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.pe_ttm is None:
         return False, "PE TTM 缺失"
     if m.pe_ttm <= r.min_pe_ttm:
-        return False, f"TTM PE <= {r.min_pe_ttm}"
+        return False, f"市盈率 {m.pe_ttm:.2f} <= {r.min_pe_ttm}（需 > 0）"
     if m.pe_ttm >= r.max_pe_ttm:
-        return False, f"TTM PE > {r.max_pe_ttm}"
+        return False, f"市盈率 {m.pe_ttm:.2f} > {r.max_pe_ttm}（需 < {r.max_pe_ttm}）"
     return True, None
 
 
@@ -74,12 +74,12 @@ def _rule_roe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
         if all(y >= r.min_roe_pct for y in m.roe_history[:3]):
             return True, None
         worst = min(m.roe_history[:3])
-        return False, f"近 3 年 ROE 最低 {worst:.1f}% < {r.min_roe_pct}%"
+        return False, f"近 3 年 ROE 最低 {worst:.1f}% < {r.min_roe_pct}%（= 净利润 / 归母权益）"
     # ponytail: fall back to TTM only when per-year data is missing entirely
     if m.roe_ttm_pct is None:
-        return False, "ROE 缺失"
+        return False, "ROE 数据缺失"
     if m.roe_ttm_pct < r.min_roe_pct:
-        return False, f"ROE TTM {m.roe_ttm_pct:.1f}% < {r.min_roe_pct}%"
+        return False, f"ROE（滚动12月）{m.roe_ttm_pct:.1f}% < {r.min_roe_pct}%"
     return True, None
 
 
@@ -87,7 +87,7 @@ def _rule_debt(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.debt_ratio_pct is None:
         return False, "负债率缺失"
     if m.debt_ratio_pct > r.max_debt_ratio_pct:
-        return False, f"负债率 {m.debt_ratio_pct:.1f}% > {r.max_debt_ratio_pct}%"
+        return False, f"资产负债率 {m.debt_ratio_pct:.1f}% > {r.max_debt_ratio_pct}%（= 总负债 / 总资产）"
     return True, None
 
 
@@ -95,7 +95,7 @@ def _rule_payout(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]
     if m.payout_ratio_pct is None:
         return False, "分红率缺失"
     if m.payout_ratio_pct < r.min_payout_ratio_pct:
-        return False, f"分红率 {m.payout_ratio_pct:.1f}% < {r.min_payout_ratio_pct}%"
+        return False, f"分红率 {m.payout_ratio_pct:.1f}% < {r.min_payout_ratio_pct}%（= 当年现金分红总额 / 净利润）"
     # > 100 is allowed but warned elsewhere; do not fail it.
     return True, None
 
@@ -103,18 +103,18 @@ def _rule_payout(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]
 def _rule_ocf_dividend(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if r.require_ocf_covers_dividend:
         if m.operating_cash_flow_total is None or m.cash_dividend_total is None:
-            return False, "OCF/分红数据缺失"
+            return False, "经营性现金流 / 分红总额 数据缺失"
         if m.operating_cash_flow_total < m.cash_dividend_total:
-            return False, "经营性现金流 < 当年分红总额"
+            return False, f"经营性现金流 {m.operating_cash_flow_total / 1e8:.2f} 亿 < 当年分红 {m.cash_dividend_total / 1e8:.2f} 亿"
     return True, None
 
 
 def _rule_cf_per_share(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if r.require_positive_cf_per_share:
         if m.operating_cash_flow_per_share is None:
-            return False, "每股OCF缺失"
+            return False, "每股经营性现金流数据缺失"
         if m.operating_cash_flow_per_share <= 0:
-            return False, f"每股OCF {m.operating_cash_flow_per_share:.2f} <= 0"
+            return False, f"每股经营性现金流 {m.operating_cash_flow_per_share:.2f} 元 <= 0（= 经营活动现金流 / 总股本）"
     return True, None
 
 
@@ -124,16 +124,14 @@ def _rule_revenue_decline(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Opti
     threshold = -abs(r.max_revenue_decline_pct)
     if min(m.main_revenue_yoy_pct_list) < threshold:
         return False, (
-            f"主营收入最大跌幅 "
-            f"{min(m.main_revenue_yoy_pct_list):.1f}% "
-            f"超过 {r.max_revenue_decline_pct}%"
+            f"主营业务收入同比最大跌幅 {min(m.main_revenue_yoy_pct_list):.1f}% 超阈值 {r.max_revenue_decline_pct}%（= (本年营收 - 上年营收) / 上年营收）"
         )
     return True, None
 
 
 def _rule_deducted_profit(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.deducted_non_net_profit_positive_3y is False:
-        return False, "近3年扣非净利润非全正"
+        return False, "近 3 年扣非净利润非全正（= 净利润 - 非经常性损益，至少 3 年都得 > 0）"
     return True, None
 
 
@@ -209,17 +207,17 @@ HardRule = Callable[[StockMetrics, ScreenerRules], tuple[bool, Optional[str]]]
 
 
 HARD_RULES: list[tuple[str, HardRule]] = [
-    ("ST/*ST", _rule_st),
-    ("non-standard audit", _rule_qualified),
-    ("近3年股息率≥4%", _rule_div_yield),
-    ("TTM 市盈率 0<PE<30", _rule_pe),
-    ("近3年扣非净利润 > 0", _rule_deducted_profit),
-    ("近3年 ROE > 10%", _rule_roe),
-    ("负债率 < 70%", _rule_debt),
-    ("分红率 ≥ 40%", _rule_payout),
-    ("OCF 覆盖分红", _rule_ocf_dividend),
-    ("每股经营现金流 > 0", _rule_cf_per_share),
-    ("主营收入跌幅 < 20%", _rule_revenue_decline),
+    ("ST/*ST 股（特殊处理）", _rule_st),
+    ("非标审计意见", _rule_qualified),
+    ("近3年股息率均 ≥ 4%（= 每股现金分红 / 收盘价）", _rule_div_yield),
+    ("市盈率（滚动12月） 在 0~30 之间（= 股价 / 滚动12月每股收益）", _rule_pe),
+    ("近3年扣非净利润均 > 0（= 净利润 - 非经常性损益）", _rule_deducted_profit),
+    ("近3年 ROE 均 ≥ 10%（= 净利润 / 归母权益）", _rule_roe),
+    ("资产负债率 < 70%（= 总负债 / 总资产）", _rule_debt),
+    ("分红率 ≥ 40%（= 当年现金分红 / 净利润）", _rule_payout),
+    ("经营性现金流 ≥ 当年分红总额", _rule_ocf_dividend),
+    ("每股经营性现金流 > 0（= 经营活动现金流 / 总股本）", _rule_cf_per_share),
+    ("主营业务收入同比最大跌幅 < 20%（= (本年营收 - 上年营收) / 上年营收）", _rule_revenue_decline),
 ]
 
 
