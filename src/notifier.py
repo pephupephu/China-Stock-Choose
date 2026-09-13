@@ -23,8 +23,21 @@ def render_plain_text(
     run_date: _dt.date,
     soft_picks: Optional[list[ScreeningResult]] = None,
     near_misses: Optional[list[ScreeningResult]] = None,
+    rules=None,
 ) -> str:
     lines = [f"China-Stock-Choose · {run_date.isoformat()}", ""]
+    if rules is not None:
+        lines.append("")
+        lines.append("【本轮筛选条件】（= 邮件生成时刻的活跃阈值）")
+        lines.append(f"  近 3 年股息率均 ≥ {rules.min_dividend_yield_pct}%（= 每股现金分红 / 收盘价）")
+        lines.append(f"  近 3 年扣非净利润均 > 0（= 净利润 - 非经常性损益）")
+        lines.append(f"  近 3 年 ROE 均 ≥ {rules.min_roe_pct}%（= 净利润 / 归母权益）")
+        lines.append(f"  资产负债率 < {rules.max_debt_ratio_pct}%（= 总负债 / 总资产）")
+        lines.append(f"  分红率 ≥ {rules.min_payout_ratio_pct}%（= 当年现金分红 / 净利润）")
+        lines.append(f"  市盈率（滚动12月） 在 {rules.min_pe_ttm}~{rules.max_pe_ttm} 之间（= 股价 / 滚动12月每股收益）")
+        lines.append(f"  主营业务收入同比最大跌幅 < {rules.max_revenue_decline_pct}%（= (本年营收 - 上年营收) / 上年营收）")
+        lines.append("  经营性现金流 ≥ 当年分红总额；每股经营性现金流 > 0")
+        lines.append("")
     picks = [r for r in results if r.passes]
     soft_picks = soft_picks or []
     near_misses = near_misses or []

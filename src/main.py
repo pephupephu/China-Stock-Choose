@@ -184,7 +184,7 @@ def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date,
         logger.warning("EMAIL_RECIPIENTS not set; skipping email")
         return
     html_body = render_html(results, today, soft_picks=soft_picks, near_misses=near_misses)
-    plain_body = render_plain_text(results, today, soft_picks=soft_picks, near_misses=near_misses)
+    plain_body = render_plain_text(results, today, soft_picks=soft_picks, near_misses=near_misses, rules=cfg.rules)
     subject = (
         f"{cfg.email.subject_prefix} {today.isoformat()} "
         f"命中 {sum(1 for r in results if r.passes)} 只"
