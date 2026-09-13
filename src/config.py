@@ -36,7 +36,7 @@ class ScreenerRules:
     """Hard filter thresholds. Mirrors the merged rule-set in README."""
 
     # Dividend yield window (>= 4% in last 2 distinct annual cash distributions)
-    min_dividend_yield_pct: float = 4.0
+    min_dividend_yield_pct: float = 3.5  # ponytail: relaxed 4.0 -> 3.5 per user (Sept 13)
     dividend_lookback_years: int = 3
 
     # Valuation
@@ -45,18 +45,18 @@ class ScreenerRules:
 
     # Profitability & stability
     require_deducted_non_net_profit_positive_years: int = 3
-    min_roe_pct: float = 10.0          # 3y avg OR each of last 3 years
+    min_roe_pct: float = 8.0           # ponytail: relaxed 10.0 -> 8.0 per user (Sept 13)
     roe_strict_all_years: bool = True
     max_revenue_decline_pct: float = 20.0   # YoY single-year max drop in main revenue
     revenue_decline_eval_years: int = 3
 
     # Capital structure
-    max_debt_ratio_pct: float = 70.0
+    max_debt_ratio_pct: float = 75.0  # ponytail: relaxed 70.0 -> 75.0 per user (Sept 13)
     warn_debt_ratio_pct: float = 60.0
     require_positive_cf_per_share: bool = True
 
     # Distribution
-    min_payout_ratio_pct: float = 40.0
+    min_payout_ratio_pct: float = 25.0  # ponytail: relaxed 40.0 -> 25.0 per user (Sept 13)
     require_ocf_covers_dividend: bool = False
 
     # Universe exclusions
@@ -113,14 +113,14 @@ def load_config(env_path: Optional[Path] = None) -> AppConfig:
     env.update({k: v for k, v in os.environ.items()})  # real env wins
 
     rules = ScreenerRules(
-        min_dividend_yield_pct=float(env.get("RULE_MIN_DIVIDEND_YIELD_PCT", 4.0)),
+        min_dividend_yield_pct=float(env.get("RULE_MIN_DIVIDEND_YIELD_PCT", 3.5)),
         dividend_lookback_years=int(env.get("RULE_DIVIDEND_LOOKBACK_YEARS", 3)),
         max_pe_ttm=float(env.get("RULE_MAX_PE_TTM", 30.0)),
-        max_debt_ratio_pct=float(env.get("RULE_MAX_DEBT_RATIO_PCT", 70.0)),
+        max_debt_ratio_pct=float(env.get("RULE_MAX_DEBT_RATIO_PCT", 75.0)),
         warn_debt_ratio_pct=float(env.get("RULE_WARN_DEBT_RATIO_PCT", 60.0)),
         max_revenue_decline_pct=float(env.get("RULE_MAX_REVENUE_DECLINE_PCT", 20.0)),
-        min_payout_ratio_pct=float(env.get("RULE_MIN_PAYOUT_RATIO_PCT", 40.0)),
-        min_roe_pct=float(env.get("RULE_MIN_ROE_PCT", 10.0)),
+        min_payout_ratio_pct=float(env.get("RULE_MIN_PAYOUT_RATIO_PCT", 25.0)),
+        min_roe_pct=float(env.get("RULE_MIN_ROE_PCT", 8.0)),
         exclude_qualified=_env_bool(env.get("RULE_EXCLUDE_QUALIFIED", "true")),
         require_ocf_covers_dividend=_env_bool(
             env.get("RULE_REQUIRE_OCF_COVERS_DIVIDEND", "false")
