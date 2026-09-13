@@ -186,17 +186,27 @@ def metrics_from_payload(
         out.roe_ttm_pct = (np_ttm / equity_avg) * 100.0
     # ponytail: per-year ROE for the last 3 fiscal years, so the screener can
     # enforce "each of last 3 years >= min_roe_pct" instead of just TTM.
+    # _parse_date returns a date (not Timestamp), so np_attrib.index is a regular
+    # pd.Index -- pd.to_datetime() promotes it to DatetimeIndex so .year works.
     if not np_attrib.empty and not equity_eop.empty:
-        _roe_hist: list[float] = []
-        for yr in sorted({y for y in np_attrib.index.year}, reverse=True)[:3]:
-            try:
-                ann_ni = np_attrib[np_attrib.index.year == yr].iloc[-1]
-                ann_eq = equity_eop[equity_eop.index.year == yr].iloc[-1]
-            except Exception:
-                continue
-            if ann_ni is not None and ann_eq and ann_eq > 0:
-                _roe_hist.append(float(ann_ni) / float(ann_eq) * 100.0)
-        out.roe_history = _roe_hist
+        try:
+            np_idx = pd.to_datetime(np_attrib.index)
+            eq_idx = pd.to_datetime(equity_eop.index)
+            years = sorted({y for y in np_idx.year if pd.notna(y)}, reverse=True)[:3]
+            _roe_hist: list[float] = []
+            for yr in years:
+                ni_match = np_attrib[np_idx.year == yr]
+                eq_match = equity_eop[eq_idx.year == yr]
+                if ni_match.empty or eq_match.empty:
+                    continue
+                ann_ni = ni_match.iloc[-1]
+                ann_eq = eq_match.iloc[-1]
+                if ann_ni is not None and ann_eq and ann_eq > 0:
+                    _roe_hist.append(float(ann_ni) / float(ann_eq) * 100.0)
+            out.roe_history = _roe_hist
+        except Exception:
+            # ponytail: never let roe_history derivation crash the whole metric build.
+            out.roe_history = []
 
     shares = _latest(_values_by_item(bs_long, "shares_outstanding"))
     bvps: Optional[float] = None
