@@ -87,7 +87,7 @@ def _prefilter_by_pe(fetcher: DataFetcher, universe: pd.DataFrame, max_pe: float
     Stocks with PE <= 0 (loss-making: EPS is negative, so price/EPS flips sign)
     and stocks with PE > max_pe are both excluded -- their detailed financial
     fetches cost the most network/parse time and they cannot pass the rules.
-    \"\"\"
+    """
     try:
         spot = fetcher.call("stock_zh_a_spot_em")
     except Exception as exc:
