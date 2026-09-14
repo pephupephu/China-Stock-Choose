@@ -93,7 +93,14 @@ def _rule_debt(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
 
 def _rule_payout(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.payout_ratio_pct is None:
-        return False, "分红率缺失"
+        # ponytail: payout = cash_div / net_profit. net_profit is None or <= 0 when
+        # the most recent dividend year was a loss year. The company still paid out
+        # cash, so it is NOT necessarily a bad dividend payer. Fall back to "any cash
+        # dividends in the lookback window == pass". Only fail when there is no
+        # dividend record at all (truly not a dividend payer).
+        if m.cash_dividend_per_share_history and len(m.cash_dividend_per_share_history) >= r.dividend_lookback_years:
+            return True, None
+        return False, "近" + str(r.dividend_lookback_years) + "年无现金分红"
     if m.payout_ratio_pct < r.min_payout_ratio_pct:
         return False, f"分红率 {m.payout_ratio_pct:.1f}% < {r.min_payout_ratio_pct}%（= 当年现金分红总额 / 净利润）"
     # > 100 is allowed but warned elsewhere; do not fail it.
