@@ -132,18 +132,26 @@ class DataFetcher:
 
     def all_a_share_codes(self) -> pd.DataFrame:
         # ponytail: Sina endpoint is flaky; Eastmoney (stock_zh_a_spot_em) is a free
-        # fall-back with different rate limits. Try Sina first (smaller payload,
-        # cached by akshare internally) then Eastmoney if Sina 5xx/JSON-broken.
+        # fall-back with different rate limits. Sina first (smaller payload), then
+        # Eastmoney. Each endpoint gets up to 4 attempts with 8/16/24/32s backoff --
+        # transient blips (Sept 14/15 we saw Sina JSON-broken and Eastmoney
+        # RemoteDisconnected within the same minute) recover in seconds, not hours.
         last_exc: Optional[Exception] = None
         for fn_name, renames in (
             ("stock_info_a_code_name", {"code": "symbol", "name": "name"}),
             ("stock_zh_a_spot_em",    {"\u4ee3\u7801": "symbol", "\u540d\u79f0": "name"}),
         ):
-            try:
-                df = self.call(fn_name)
-            except Exception as exc:
-                last_exc = exc
-                logger.warning("universe endpoint %s failed, trying next: %s", fn_name, exc)
+            for attempt in range(1, 5):
+                try:
+                    df = self.call(fn_name)
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning("universe endpoint %s attempt %d failed: %s", fn_name, attempt, exc)
+                    if attempt < 4:
+                        time.sleep(8 * attempt)
+            else:
+                logger.warning("universe endpoint %s exhausted 4 attempts", fn_name)
                 continue
             df = df.rename(columns=renames)
             if "symbol" in df.columns and "name" in df.columns:
