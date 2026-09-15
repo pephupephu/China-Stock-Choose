@@ -56,11 +56,7 @@ def _rule_div_yield(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[s
 
 def _rule_pe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.pe_ttm is None:
-        # ponytail: akshare financial_report_sina often returns no rows for some stocks.
-        # Passing on missing data lets dividend-strong stocks with sparse financial
-        # history through; rules that ARE computable (dividend yield, OCF, debt) still
-        # gate them. Old behaviour: hard fail on None -- the reason today's run has 0 hits.
-        return True, "PE TTM 缺失（数据不全，跳过该条）"
+        return False, "PE TTM 缺失"
     if m.pe_ttm <= r.min_pe_ttm:
         return False, f"市盈率 {m.pe_ttm:.2f} <= {r.min_pe_ttm}（需 > 0）"
     if m.pe_ttm >= r.max_pe_ttm:
@@ -81,7 +77,7 @@ def _rule_roe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
         return False, f"近 3 年 ROE 最低 {worst:.1f}% < {r.min_roe_pct}%（= 净利润 / 归母权益）"
     # ponytail: fall back to TTM only when per-year data is missing entirely
     if m.roe_ttm_pct is None:
-        return True, "ROE 数据缺失（数据不全，跳过该条）"
+        return False, "ROE 数据缺失"
     if m.roe_ttm_pct < r.min_roe_pct:
         return False, f"ROE（滚动12月）{m.roe_ttm_pct:.1f}% < {r.min_roe_pct}%"
     return True, None
@@ -89,7 +85,7 @@ def _rule_roe(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
 
 def _rule_debt(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if m.debt_ratio_pct is None:
-        return True, "负债率缺失（数据不全，跳过该条）"
+        return False, "负债率缺失"
     if m.debt_ratio_pct > r.max_debt_ratio_pct:
         return False, f"资产负债率 {m.debt_ratio_pct:.1f}% > {r.max_debt_ratio_pct}%（= 总负债 / 总资产）"
     return True, None
@@ -114,7 +110,7 @@ def _rule_payout(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]
 def _rule_ocf_dividend(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if r.require_ocf_covers_dividend:
         if m.operating_cash_flow_total is None or m.cash_dividend_total is None:
-            return True, "OCF / 分红数据缺失（跳过）"
+            return False, "经营性现金流 / 分红总额 数据缺失"
         if m.operating_cash_flow_total < m.cash_dividend_total:
             return False, f"经营性现金流 {m.operating_cash_flow_total / 1e8:.2f} 亿 < 当年分红 {m.cash_dividend_total / 1e8:.2f} 亿"
     return True, None
@@ -123,7 +119,7 @@ def _rule_ocf_dividend(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optiona
 def _rule_cf_per_share(m: StockMetrics, r: ScreenerRules) -> tuple[bool, Optional[str]]:
     if r.require_positive_cf_per_share:
         if m.operating_cash_flow_per_share is None:
-            return True, "每股经营性现金流数据缺失（跳过）"
+            return False, "每股经营性现金流数据缺失"
         if m.operating_cash_flow_per_share <= 0:
             return False, f"每股经营性现金流 {m.operating_cash_flow_per_share:.2f} 元 <= 0（= 经营活动现金流 / 总股本）"
     return True, None
