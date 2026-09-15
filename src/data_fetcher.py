@@ -155,14 +155,45 @@ class DataFetcher:
     def dividend_history(self, symbol: str) -> pd.DataFrame:
         return self.call("stock_dividend_cninfo", symbol=symbol)
 
+    # ponytail: Sina financial endpoints return empty for many stocks (Sina is rate-limited,
+ # missing older issuers, slow under load). Eastmoney (stock_*_by_report_em) returns the
+ # full multi-year report in one call and rarely has empty rows. Use Eastmoney as primary
+ # and Sina as backup.
+    def _em_financial(self, em_fn: str, symbol: str) -> pd.DataFrame:
+        try:
+            df = self.call(em_fn, stock=symbol)
+        except Exception:
+            return pd.DataFrame()
+        if df.empty:
+            return df
+        # ponytail: Eastmoney wide format starts with SECUCODE/SECURITY_CODE/REPORT_TYPE
+        # columns; Sina starts with the period date. metrics normalises on df.columns[0],
+        # so re-order Eastmoney to put REPORT_DATE first and drop the id columns.
+        drop = [c for c in ["SECUCODE", "SECURITY_CODE", "REPORT_TYPE"] if c in df.columns]
+        if "REPORT_DATE" in df.columns:
+            df = df.drop(columns=drop)
+            cols = ["REPORT_DATE"] + [c for c in df.columns if c != "REPORT_DATE"]
+            df = df[cols]
+            # filter to annual reports only (skip quarterly)
+            df = df[df["REPORT_TYPE"].astype(str).str.contains("年报", na=False)] if "REPORT_TYPE" in df.columns else df
+        return df
     def balance_sheet(self, symbol: str) -> pd.DataFrame:
-        return self.call("stock_financial_report_sina", stock=symbol, symbol="资产负债表")
+        df = self._em_financial("stock_balance_sheet_by_report_em", symbol)
+        if df.empty:
+            df = self.call("stock_financial_report_sina", stock=symbol, symbol="资产负债表")
+        return df
 
     def income_statement(self, symbol: str) -> pd.DataFrame:
-        return self.call("stock_financial_report_sina", stock=symbol, symbol="利润表")
+        df = self._em_financial("stock_profit_sheet_by_report_em", symbol)
+        if df.empty:
+            df = self.call("stock_financial_report_sina", stock=symbol, symbol="利润表")
+        return df
 
     def cashflow_statement(self, symbol: str) -> pd.DataFrame:
-        return self.call("stock_financial_report_sina", stock=symbol, symbol="现金流量表")
+        df = self._em_financial("stock_cash_flow_sheet_by_report_em", symbol)
+        if df.empty:
+            df = self.call("stock_financial_report_sina", stock=symbol, symbol="现金流量表")
+        return df
 
     def daily_history(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self.call(

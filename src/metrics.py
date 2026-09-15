@@ -71,23 +71,40 @@ _long = normalise_sina
 
 
 _LINE_ITEMS = {
+    # ponytail: aliases cover BOTH Sina (Chinese) and Eastmoney (English) column names.
+    # Eastmoney is the primary data source now (Sina often empty / rate-limited); the
+    # English aliases here are what make its data usable without rewriting metrics code.
     "net_profit_attrib": [
         "归属于母公司股东的净利润",
         "归属于母公司所有者的净利润",
         "归母净利润",
         "归属于母公司净利润",
+        "PARENT_NETPROFIT",
+        "NETPROFIT",
     ],
-    "net_profit": ["净利润"],
-    "deducted_net_profit": ["扣除非经常性损益后的净利润"],
-    "revenue": ["营业总收入", "营业收入"],
-    "asset_total": ["资产总计"],
-    "liab_total": ["负债合计"],
+    "net_profit": ["净利润", "NETPROFIT", "TOTAL_PROFIT"],
+    "deducted_net_profit": [
+        "扣除非经常性损益后的净利润",
+        "DEDUCT_PARENT_NETPROFIT",
+        "DEDUCTED_NETPROFIT",
+        "DEDUCT_NETPROFIT",
+    ],
+    "revenue": ["营业总收入", "营业收入", "OPERATE_INCOME", "TOTAL_OPERATE_INCOME", "OPERATE_REV"],
+    "asset_total": ["资产总计", "TOTAL_ASSETS"],
+    "liab_total": ["负债合计", "TOTAL_LIAB", "TOTAL_LIABILITIES"],
     "equity_attrib": [
         "归属于母公司股东权益合计",
         "归属于母公司所有者权益合计",
+        "PARENT_EQUITY",
+        "EQUITY_PARENT",
     ],
-    "shares_outstanding": ["实收资本(或股本)", "实收资本", "股本"],
-    "ocf": ["经营活动产生的现金流量净额"],
+    "shares_outstanding": ["实收资本(或股本)", "实收资本", "股本", "SHARE_CAPITAL", "ACTUAL_CAPITAL"],
+    "ocf": [
+        "经营活动产生的现金流量净额",
+        "NETCASH_OPERATE",
+        "NET_CASH_FLOWS_OPER",
+        "CASH_FLOWS_OPER",
+    ],
 }
 
 
