@@ -170,10 +170,17 @@ class DataFetcher:
     def _em_financial(self, em_fn: str, symbol: str) -> pd.DataFrame:
         try:
             df = self.call(em_fn, stock=symbol)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Eastmoney %s raised for %s: %s", em_fn, symbol, exc)
             return pd.DataFrame()
         if df.empty:
+            logger.warning("Eastmoney %s returned empty for %s", em_fn, symbol)
             return df
+        # ponytail: diagnostic -- log the actual columns once per (fn, symbol) so we can see
+        # which Eastmoney column names the screener should be matching against. Without
+        # this we are guessing at aliases. Run the workflow, grep the action log for
+        # "EASTMONEY_COLUMNS", paste back, and I can fill in _LINE_ITEMS correctly.
+        logger.info("EASTMONEY_COLUMNS %s %s cols=%s rows=%d", em_fn, symbol, list(df.columns), len(df))
         # ponytail: Eastmoney wide format starts with SECUCODE/SECURITY_CODE/REPORT_TYPE
         # columns; Sina starts with the period date. metrics normalises on df.columns[0],
         # so re-order Eastmoney to put REPORT_DATE first and drop the id columns.
