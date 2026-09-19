@@ -24,8 +24,16 @@ def render_plain_text(
     soft_picks: Optional[list[ScreeningResult]] = None,
     near_misses: Optional[list[ScreeningResult]] = None,
     rules=None,
+    progress: Optional[tuple[int, int, int]] = None,
 ) -> str:
-    lines = [f"China-Stock-Choose · {run_date.isoformat()}", ""]
+    # ponytail: progress=(covered, total, today_new) shows rotation status
+    # at the top of every email so the user can see each batch is different.
+    header = f"China-Stock-Choose · {run_date.isoformat()}"
+    if progress:
+        covered, total, today_new = progress
+        pct = (covered / total * 100) if total else 0
+        header += f"  本周累计 {covered}/{total}（{pct:.0f}%）· 今日新增 {today_new}"
+    lines = [header, ""]
     if rules is not None:
         lines.append("")
         lines.append("【本轮筛选条件】（= 邮件生成时刻的活跃阈值）")

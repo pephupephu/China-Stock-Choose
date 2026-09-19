@@ -179,18 +179,53 @@ def _run_full_screen(
 
 def _send(cfg: AppConfig, results: list[ScreeningResult], today: _dt.date,
          soft_picks: Optional[list[ScreeningResult]] = None,
-         near_misses: Optional[list[ScreeningResult]] = None) -> None:
+         near_misses: Optional[list[ScreeningResult]] = None,
+         progress: Optional[tuple[int, int, int]] = None) -> None:
+    """Send the screening-results email.
+
+    progress=(covered, total, today_new) is appended to the subject so the
+    user can see at a glance which batch this email covers and how far
+    rotation has progressed through the universe.
+    """
     if not cfg.email.recipients:
         logger.warning("EMAIL_RECIPIENTS not set; skipping email")
         return
-    html_body = render_html(results, today, soft_picks=soft_picks, near_misses=near_misses)
-    plain_body = render_plain_text(results, today, soft_picks=soft_picks, near_misses=near_misses, rules=cfg.rules)
+    html_body = render_html(results, today, soft_picks=soft_picks, near_misses=near_misses, progress=progress)
+    plain_body = render_plain_text(results, today, soft_picks=soft_picks, near_misses=near_misses, rules=cfg.rules, progress=progress)
     subject = (
         f"{cfg.email.subject_prefix} {today.isoformat()} "
         f"命中 {sum(1 for r in results if r.passes)} 只"
     )
+    if progress:
+        covered, total, today_new = progress
+        subject += f" 累计 {covered}/{total} · 今日新增 {today_new}"
     send_email(cfg.email, subject=subject, html_body=html_body, plain_body=plain_body)
     logger.info("Email sent to %s", ", ".join(cfg.email.recipients))
+
+
+def _send_status(cfg: AppConfig, today: _dt.date, week: str,
+                 covered: int, total: int, reason: str) -> None:
+    """Heartbeat email when cmd_daily has nothing to push. Prevents the user
+    from thinking the cron died -- they see rotation paused instead.
+    """
+    if not cfg.email.recipients:
+        return
+    subject = (
+        f"{cfg.email.subject_prefix} {today.isoformat()} "
+        f"轮转暂停 · 累计 {covered}/{total}"
+    )
+    body = (
+        f"China-Stock-Choose · {today.isoformat()}\n\n"
+        f"本周（{week}）扫描进度：{covered}/{total}\n\n"
+        f"{reason}\n\n"
+        f"说明：\n"
+        f"  - akshare 数据源异常时，universe 列表拉取失败，会跳过当天\n"
+        f"  - 本周已扫描完成时，pending 为空，会跳过当天\n"
+        f"  - 下一个交易日 cron 会自动恢复\n\n"
+        f"如需立即强制扫描新批次，可手动触发 workflow_dispatch（多次触发安全去重，不会重复发邮件）。\n"
+    )
+    send_email(cfg.email, subject=subject, html_body=f"<pre>{body}</pre>", plain_body=body)
+    logger.info("Status email sent (rotation paused: %s)", reason)
 
 
 _CONTINUITY_LABELS = {"近3年股息率≥4%", "近3年扣非净利润 > 0"}
@@ -297,6 +332,18 @@ def _rebuild_result(rd: dict) -> ScreeningResult:
     )
 
 
+_META_KEY = "__meta__"
+
+
+def _store_stock_count(store: dict) -> int:
+    """Count actual stock entries in the weekly store, excluding the meta key."""
+    return sum(1 for k in store if k != _META_KEY)
+
+
+def _store_meta(store: dict) -> dict:
+    return store.setdefault(_META_KEY, {})
+
+
 def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | None = None) -> int:
     """Incremental mode: screen the next ``chunk`` uncovered symbols, accumulate
     results across the ISO week, and push the email once coverage is complete
@@ -310,6 +357,15 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
     week = f"{iso.year}-W{iso.week:02d}"
     path = _weekly_path(cfg, week)
     store = _load_weekly(path)
+    meta = _store_meta(store)
+
+    # ponytail: dedup -- if we already pushed today, do not re-send the same
+    # accumulated store. Prevents manual workflow_dispatch re-runs on Sat Beijing
+    # (still Fri UTC) from re-sending Friday email.
+    last_pushed = meta.get("last_pushed_date")
+    if last_pushed == today.isoformat():
+        logger.info("Weekly: already pushed on %s, skipping re-send", last_pushed)
+        return 0
 
     fetcher = DataFetcher(
         proxy=cfg.data.akshare_proxy,
@@ -326,7 +382,7 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
     pending = [s for s in all_symbols if s not in store]
     logger.info(
         "Weekly %s: store=%d pending=%d universe=%d",
-        week, len(store), len(pending), len(all_symbols),
+        week, _store_stock_count(store), len(pending), len(all_symbols),
     )
 
     if pending:
@@ -343,11 +399,11 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
                 "failed_labels": r.failed_labels,
             }
         _save_weekly(path, store)
-        logger.info("Added %d; coverage %d/%d", len(batch), len(store), len(all_symbols))
+        logger.info("Added %d; coverage %d/%d", len(batch), _store_stock_count(store), len(all_symbols))
 
-    coverage = len(store)
+    coverage = _store_stock_count(store)
     complete = coverage >= len(all_symbols)
-    push = bool(store) and (complete or today.weekday() == push_weekday)
+    push = coverage > 0 and (complete or today.weekday() == push_weekday)
     if not push:
         logger.info(
             "Not pushing yet (coverage %d/%d, weekday %d != push %d). Re-run daily to accumulate.",
@@ -355,13 +411,21 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
         )
         return 0
 
-    results = sort_picks([_rebuild_result(rd) for rd in store.values()])
+    results = sort_picks(
+        [_rebuild_result(store[k]) for k in store if k != _META_KEY]
+    )
     has_hard = any(r.passes for r in results)
     soft, near_miss = _fallback_buckets(results, cfg.rules) if not has_hard else ([], [])
     files = write_outputs(cfg.output_dir, results, today, soft_picks=soft, near_misses=near_miss)
     logger.info("Weekly push: coverage %d/%d, outputs %s", coverage, len(all_symbols), list(files.values()))
+    # ponytail: stamp last_pushed_date BEFORE sending so a transient SMTP failure
+    # does not cause a duplicate push on retry.
+    meta["last_pushed_date"] = today.isoformat()
+    meta["last_pushed_iso_week"] = week
+    _save_weekly(path, store)
     try:
-        _send(cfg, results, today, soft, near_miss)
+        _send(cfg, results, today, soft, near_miss,
+              progress=(coverage, len(all_symbols), 0))
     except Exception as exc:
         logger.error("Email failed: %s", exc)
         return 1
@@ -370,9 +434,14 @@ def cmd_weekly(cfg: AppConfig, chunk: int | None = None, push_weekday: int | Non
 
 def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
     """Screen today's batch, save to weekly store, push today's picks email.
-    
+
     Use this Mon-Thu for a daily 1/5 summary. On Friday, run cmd_weekly
     instead -- it reads the full accumulated store and pushes the whole week.
+
+    ponytail: when the universe fetch fails (akshare rate-limit), 'pending' is
+    empty and we used to return silently -- the user thought the cron died.
+    Now we send a one-line status email so the user knows the system is alive
+    but rotation paused. Next weekday's cron will resume.
     """
     chunk = chunk or cfg.incremental_chunk
     today = _dt.date.today()
@@ -380,7 +449,8 @@ def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
     week = f"{iso.year}-W{iso.week:02d}"
     path = _weekly_path(cfg, week)
     store = _load_weekly(path)
-    
+    meta = _store_meta(store)
+
     fetcher = DataFetcher(
         proxy=cfg.data.akshare_proxy,
         cache_dir=cfg.data.cache_dir,
@@ -394,19 +464,36 @@ def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
     universe = universe[universe["symbol"].astype(str).isin(pe_pass)]
     all_symbols = [str(s) for s in universe["symbol"]]
     pending = [s for s in all_symbols if s not in store]
+    coverage = _store_stock_count(store)
     logger.info(
         "Daily %s: store=%d pending=%d universe=%d",
-        week, len(store), len(pending), len(all_symbols),
+        week, coverage, len(pending), len(all_symbols),
     )
-    
+
     if not pending:
-        logger.info("Daily: nothing pending (week fully covered)")
+        # ponytail: emit a heartbeat so the user can see rotation paused (akshare
+        # down, or universe fully covered mid-week). Use cmd_weekly for Friday.
+        logger.info("Daily: nothing pending (store=%d, universe=%d)", coverage, len(all_symbols))
+        if today.weekday() >= 5 or coverage == 0:
+            # Weekend, or nothing scanned yet: skip email, do not spam.
+            return 0
+        try:
+            _send_status(cfg, today, week, coverage, len(all_symbols),
+                         reason="今日无可扫描新标的（akshare 数据源异常或本周已覆盖完成）")
+        except Exception as exc:
+            logger.warning("Status email failed (non-fatal): %s", exc)
         return 0
-    
+
     batch = pending[:chunk]
     results = _run_full_screen(cfg, only_symbols=batch)
+    # ponytail: only add NEW stocks to store -- if a re-run somehow overlaps
+    # with an already-stored symbol, don't overwrite today's metrics with stale ones.
+    new_symbols = 0
     for r in results:
-        store[r.metrics.symbol] = {
+        sym = r.metrics.symbol
+        if sym in store:
+            continue
+        store[sym] = {
             "metrics": r.metrics.__dict__,
             "score": r.score,
             "passes": r.passes,
@@ -415,15 +502,19 @@ def cmd_daily(cfg: AppConfig, chunk: int | None = None) -> int:
             "warnings": r.warnings,
             "failed_labels": r.failed_labels,
         }
+        new_symbols += 1
+    meta["last_daily_date"] = today.isoformat()
     _save_weekly(path, store)
-    logger.info("Daily: added %d, coverage %d/%d", len(batch), len(store), len(all_symbols))
-    
+    logger.info("Daily: added %d new (batch=%d), coverage %d/%d",
+                new_symbols, len(batch), _store_stock_count(store), len(all_symbols))
+
     has_hard = any(r.passes for r in results)
     soft, near_miss = _fallback_buckets(results, cfg.rules) if not has_hard else ([], [])
     files = write_outputs(cfg.output_dir, results, today, soft_picks=soft, near_misses=near_miss)
-    logger.info("Daily push: coverage %d/%d, outputs %s", len(store), len(all_symbols), list(files.values()))
+    logger.info("Daily push: coverage %d/%d, outputs %s", _store_stock_count(store), len(all_symbols), list(files.values()))
     try:
-        _send(cfg, results, today, soft, near_miss)
+        _send(cfg, results, today, soft, near_miss,
+              progress=(_store_stock_count(store), len(all_symbols), new_symbols))
     except Exception as exc:
         logger.error("Email failed: %s", exc)
         return 1

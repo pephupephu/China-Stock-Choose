@@ -191,6 +191,7 @@ def render_html(
     run_date: _dt.date,
     soft_picks: Optional[list[ScreeningResult]] = None,
     near_misses: Optional[list[ScreeningResult]] = None,
+    progress: Optional[tuple[int, int, int]] = None,
 ) -> str:
     picks = [r for r in results if r.passes]
     rejected = []
@@ -231,6 +232,13 @@ def render_html(
 
     body = []
     body.append(f"<h1>📈 每日选股 · {run_date.isoformat()}</h1>")
+    if progress:
+        covered, total, today_new = progress
+        pct = (covered / total * 100) if total else 0
+        body.append(
+            f"<p><span class='pill'>本周累计 {covered}/{total}（{pct:.0f}%）</span>"
+            f"<span class='pill'>今日新增 {today_new}</span></p>"
+        )
     body.append(
         f"<p><span class='pill'>规则命中 {len(picks)} 只</span>"
         f"<span class='pill'>扫描 {len(results)} 只</span>"
