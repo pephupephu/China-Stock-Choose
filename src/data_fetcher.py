@@ -54,7 +54,9 @@ class DataFetcher:
         cache_dir: Path = Path("output/.cache"),
         cache_ttl_seconds: int = 6 * 3600,
         max_workers: int = 6,
+        universe_cache_max_age_days: int = 7,  # ponytail: re-use yesterday's universe if today's fetch fails
     ) -> None:
+        self.universe_cache_max_age_days = universe_cache_max_age_days
         self.proxy = proxy
         self.timeout = timeout
         self.max_retries = max_retries
@@ -130,12 +132,27 @@ class DataFetcher:
 
     # ---------------------------------------------------------------- domain
 
+    _UNIVERSE_CACHE = "universe_a_share.parquet"
+
+    def _universe_cache_path(self) -> Path:
+        return self.cache_dir / self._UNIVERSE_CACHE
+
     def all_a_share_codes(self) -> pd.DataFrame:
-        # ponytail: Sina endpoint is flaky; Eastmoney (stock_zh_a_spot_em) is a free
-        # fall-back with different rate limits. Sina first (smaller payload), then
-        # Eastmoney. Each endpoint gets up to 4 attempts with 8/16/24/32s backoff --
-        # transient blips (Sept 14/15 we saw Sina JSON-broken and Eastmoney
-        # RemoteDisconnected within the same minute) recover in seconds, not hours.
+        """Return the full A-share symbol+name list, with disk caching as a
+        last-resort fallback when every live endpoint is rate-limited.
+
+        ponytail: Sina endpoint is flaky; Eastmoney (stock_zh_a_spot_em) is a
+        free fall-back with different rate limits. Sina first (smaller payload),
+        then Eastmoney. Each endpoint gets up to 4 attempts with 8/16/24/32s
+        backoff -- transient blips (Sept 14/15 we saw Sina JSON-broken and
+        Eastmoney RemoteDisconnected within the same minute) recover in seconds.
+        If BOTH endpoints exhaust 4 attempts each (a full ~3 minutes of retries),
+        fall back to a disk cache of the most recent successful universe, as
+        long as it is younger than `universe_cache_max_age_days`.
+        The cache only persists across the whole week if akshare is down for
+        days -- exactly the case we want to keep daily cron making progress on
+        a different 1100.
+        """
         last_exc: Optional[Exception] = None
         for fn_name, renames in (
             ("stock_info_a_code_name", {"code": "symbol", "name": "name"}),
@@ -156,8 +173,31 @@ class DataFetcher:
             df = df.rename(columns=renames)
             if "symbol" in df.columns and "name" in df.columns:
                 df["symbol"] = df["symbol"].astype(str)
+                # ponytail: persist to disk for next time the live endpoint fails
+                try:
+                    self._universe_cache_path().parent.mkdir(parents=True, exist_ok=True)
+                    df.to_parquet(self._universe_cache_path(), index=False)
+                except Exception as exc:
+                    logger.warning("universe cache write failed (non-fatal): %s", exc)
                 return df
             logger.warning("endpoint %s returned unexpected columns: %s", fn_name, list(df.columns))
+
+        # Live endpoints all failed -- try disk cache before giving up
+        cache_path = self._universe_cache_path()
+        if cache_path.exists():
+            try:
+                age_seconds = time.time() - cache_path.stat().st_mtime
+                max_age = self.universe_cache_max_age_days * 86400
+                if age_seconds <= max_age:
+                    cached = pd.read_parquet(cache_path)
+                    logger.warning(
+                        "universe endpoints all failed, using cached universe (%d symbols, %.1f days old)",
+                        len(cached), age_seconds / 86400,
+                    )
+                    return cached
+                logger.warning("universe cache is %.1f days old (>%d), refusing", age_seconds / 86400, self.universe_cache_max_age_days)
+            except Exception as exc:
+                logger.warning("universe cache read failed: %s", exc)
         raise last_exc or RuntimeError("all A-share universe endpoints failed")
 
     def dividend_history(self, symbol: str) -> pd.DataFrame:
