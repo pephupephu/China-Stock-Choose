@@ -55,11 +55,13 @@ def test_fail_pe_too_high():
     m = make_metrics(pe_ttm=45.0)
     r = screen(m, ScreenerRules())
     assert not r.passes
-    assert any("PE" in x for x in r.hard_fail_reasons)
+    assert any("市盈率" in x for x in r.hard_fail_reasons)
 
 
 def test_fail_debt_ratio_too_high():
-    m = make_metrics(debt_ratio_pct=80.0)
+    # max_debt_ratio_pct default is 80.0 (relaxed from 70 per user), and the rule
+    # is a strict ">", so the sample has to sit above the current threshold.
+    m = make_metrics(debt_ratio_pct=85.0)
     r = screen(m, ScreenerRules())
     assert not r.passes
     assert any("负债率" in x for x in r.hard_fail_reasons)
