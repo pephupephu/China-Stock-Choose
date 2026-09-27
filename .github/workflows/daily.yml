@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run incremental weekly screener (daily chunk + Fri/complete push)
+      - name: Run rolling screener (daily chunk; auto new round when covered)
         env:
           AKSHARE_PROXY: ${{ secrets.AKSHARE_PROXY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -47,33 +47,19 @@ jobs:
           LOG_LEVEL: INFO
           TOP_N: "200"
           INCREMENTAL_CHUNK: "1100"
-          WEEKLY_PUSH_WEEKDAY: "4"
         run: |
           if [ "${{ github.event.inputs.smoke }}" = "true" ]; then
             echo "Smoke mode: screening only, no email"
             python -m src.main screen
           else
-            # ponytail: use Asia/Shanghai day-of-week, NOT UTC. Cron fires at 10:30 UTC
-            # = 18:30 Beijing, but workflow_dispatch can run any time. If user triggers
-            # Saturday morning Beijing time (00:30-08:00 UTC = still Friday UTC), the old
-            # UTC-DOW check would route to cmd_weekly and re-send Friday accumulated email.
-            # Using TZ=Asia/Shanghai makes Saturday Beijing correctly route to cmd_daily.
-            # 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun.
-            DOW=$(TZ='Asia/Shanghai' date +%u)
-            if [ "$DOW" = "5" ]; then
-              echo "Friday: weekly full-week push"
-              python -m src.main weekly
-            else
-              echo "Daily: today picks push"
-              python -m src.main daily
-            fi
+            python -m src.main daily
           fi
 
       - name: Commit output artefacts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/pick_*.md output/pick_*.html output/pick_*.json output/.weekly_*.json || true
+          git add output/pick_*.md output/pick_*.html output/pick_*.json output/.scan_store.json || true
           if git diff --cached --quiet; then
             echo "No new artefacts to commit."
             exit 0

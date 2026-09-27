@@ -1,8 +1,8 @@
 {
   "__meta__": {
-    "last_daily_date": "2026-09-24",
-    "last_pushed_date": "2026-09-25",
-    "last_pushed_iso_week": "2026-W39"
+    "round": 1,
+    "round_started": "2026-09-21",
+    "seeded_from": "weekly_2026-W39"
   },
   "000567": {
     "metrics": {

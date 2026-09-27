@@ -24,4 +24,4 @@ output/pick_*.json
 .vscode/
 .idea/
 .DS_Store
-# Incremental weekly screener state (rebuilt each ISO week)
+# Rolling scan state lives in output/.scan_store.json (tracked; one round at a time)

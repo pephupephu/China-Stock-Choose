@@ -48,27 +48,28 @@ CLI:
 ```
 python -m src.main run       # full pipeline + email
 python -m src.main screen    # screen only, no email
-python -m src.main weekly    # incremental daily chunk; accumulate across the week, push on Friday (or when fully covered)
+python -m src.main daily     # rolling scan: next chunk + email (weekly is a legacy alias)
 python -m src.main test      # smoke test on a handful of tickers
 ```
 
-## Incremental weekly mode (recommended)
+## Rolling scan (recommended)
 
 Scanning all ~5000 A-shares in one go hammers the data sources and is easy to
-rate-limit. `weekly` instead processes a small batch (`INCREMENTAL_CHUNK`,
-default 700) of **not-yet-screened** symbols each run, accumulates the results
-in `output/.weekly_<ISO-week>.json`, and only sends the email once coverage is
-complete **or** on `WEEKLY_PUSH_WEEKDAY` (default 4 = Friday). Symbols already
-screened this week are read from the store, so they are never re-fetched -- the
-per-day cost stays small and stable.
+rate-limit. `daily` instead processes a small batch (`INCREMENTAL_CHUNK`,
+default 700; the bundled workflow sets 1100) of **not-yet-screened** symbols
+each run and accumulates them in `output/.scan_store.json`. That store is
+deliberately **not** keyed by ISO week: the round keeps rolling across days and
+weeks until every symbol has been covered once, then the run emails the whole
+round's picks and opens the next round from scratch. Symbols already covered
+are never re-fetched, so per-day cost stays small and stable.
 
 ```bash
-python -m src.main weekly     # run daily (cron / GitHub Actions)
+python -m src.main daily      # run on every weekday (cron / GitHub Actions)
 ```
 
-Tune via env: `INCREMENTAL_CHUNK` (symbols per run) and `WEEKLY_PUSH_WEEKDAY`
-(0=Mon .. 6=Sun). The bundled workflow already calls `weekly` on weekdays and
-pushes automatically on Friday or when the week's coverage is full.
+Tune via env: `INCREMENTAL_CHUNK` (symbols per run; 1100 = 5 days per ~5500
+symbol round). The bundled workflow calls `daily` on every weekday and commits
+the store, so the rotation continues where the last run stopped.
 
 ## Rule Set (Merged)
 
